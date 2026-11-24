@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CareerOps</title>
+<link rel="stylesheet" href="/assets/styles.css">
+<script type="module" src="/assets/app.mjs"></script>
+</head>
+<body>
+<a class="skip" href="#main">본문으로 / Skip to content</a>
+<div class="shell">
+  <aside class="sidebar">
+    <a class="brand" href="/"><span class="mark">C</span><span>CareerOps</span></a>
+    <nav id="navigation" aria-label="CareerOps"></nav>
+    <div class="side-bottom"><button id="theme" type="button">◐</button><button id="language" type="button">EN</button></div>
+  </aside>
+  <main id="main" tabindex="-1">
+    <header class="topbar">
+      <label class="search"><span aria-hidden="true">⌕</span><input id="global-search" type="search"></label>
+      <button id="disconnect" type="button" hidden></button>
+    </header>
+    <section id="notice" role="status" aria-live="polite"></section>
+    <section id="screen"></section>
+  </main>
+</div>
+<dialog id="panel" aria-labelledby="panel-title"></dialog>
+</body>
+</html>

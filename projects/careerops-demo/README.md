@@ -1,15 +1,17 @@
 # CareerOps Demo
 
-A recruitment tracker built around job postings, application records, and interview schedules. This portfolio repository runs with synthetic data. The first checkpoint implements a local HTTP API and persistent SQLite storage.
+A browser-based recruitment tracker built around job postings, application records, and interview schedules. The demo uses synthetic data and persists edits in a local SQLite database.
 
-| Capability | Phase 1 |
+| Capability | Phase 2 |
 |---|---|
 | Companies, job postings, and schedules | Create, read, edit, and soft-delete |
 | Date-only and multi-day events | Preserve unknown times and both dates |
 | Access control | Instance-bound bearer credentials, separate read and write privileges |
 | Concurrent edits | Record versions and HTTP 409 on stale writes |
 | Audit history | Business updates and audit snapshots commit together |
-| Deployment | Local loopback API |
+| Workspace | Application stages, schedule and calendar, two to five posting comparison, Korean and English UI |
+| Schedule exports | CSV, Markdown, and ICS with date-only and period handling |
+| Deployment | Local loopback browser app and API |
 
 ## Run the demo
 
@@ -17,11 +19,14 @@ Requires Node.js 24.22.3 or later. The demo has no package installation step. Op
 
 ```powershell
 $env:CAREEROPS_TOKEN = node scripts/key.mjs demo development
+$env:CAREEROPS_TOKEN
 node scripts/local.mjs seed
 node scripts/local.mjs serve
 ```
 
-The server prints its loopback URL. The seed creates three fictional companies, three job postings, and five schedules. It is safe to run again.
+Open the loopback URL printed by the server and paste the demo access key from this terminal. The seed creates three fictional companies, three job postings, and five schedules. It is safe to run again.
+
+In Job Explorer, select two postings and open Compare. In Schedule, add an event with its start date empty and find it under Undated after saving. Applications records intent and actual progress separately. Confirm an actual submission before moving an application to Submitted.
 
 ### Read a schedule
 
@@ -55,7 +60,7 @@ HTTP → input and identity checks → application service → SQLite transactio
 ## Verification
 
 ```powershell
-node --test tests/foundation.test.mjs
+node --test
 ```
 
-The tests exercise two isolated local HTTP instances, restart persistence, migration integrity, concurrent writes, and rollback. Test data lives in temporary databases. Release checkpoints are recorded as Git tags.
+The 22 automated tests exercise HTTP authorization, restart persistence, schema upgrades, application transitions, schedule conflicts, calendar export, batch previews, and rollback. A browser smoke test confirmed the schedule, persistence after reload, and two-posting comparison. Test data lives in temporary databases. The Phase 2 tag is `careerops-demo-phase-2`.

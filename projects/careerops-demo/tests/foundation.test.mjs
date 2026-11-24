@@ -53,7 +53,7 @@ after(async()=>{
 test('01 migrations are versioned and repeatable; foreign keys and schema integrity pass',()=>{
   const db=openStore(root,'demo','development');
   try {
-    assert.equal(db.prepare('SELECT COUNT(*) n FROM schema_migrations').get().n,1);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM schema_migrations').get().n,2);
     assert.equal(db.prepare('PRAGMA foreign_keys').get().foreign_keys,1);
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
     assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');

@@ -36,18 +36,34 @@ const uint = value => {
   return value;
 };
 const evidence = {source_url:source, verified_on:date};
+const oneOf = choices => value => {
+  check(choices.includes(value),'Unknown status');
+  return value;
+};
+function list(value, item) {
+  check(Array.isArray(value) && value.length <= 50,'Expected list with at most 50 entries');
+  return value.map(item);
+}
+const relatedFields = {
+  aliases:value=>list(value,stringValue=>string(stringValue)),
+  requirements:value=>list(value,row=>fieldsFor({required:['kind','criterion'],fields:{kind:oneOf(['required','preferred']),criterion:string}},row,false)),
+  sources:value=>list(value,row=>fieldsFor({required:['url'],fields:{url:source,verified_on:date,evidence:string}},row,false))
+};
+export const relationFields = Object.keys(relatedFields);
 export const resources = {
-  companies: {required:['name'], fields:{name:string, size_class:string, institution_type:string, ...evidence}},
+  companies: {required:['name'], fields:{name:string, size_class:string, institution_type:string, ...evidence,aliases:relatedFields.aliases}},
   job_postings: {required:['company_id','round_key','role_code','title'], fields:{
     company_id:string, round_key:string, role_code:string, title:string, responsibilities:string, location:string,
-    headcount:uint, compensation:string, employment_type:string, deadline_date:date, deadline_time:time
+    headcount:uint, compensation:string, employment_type:string, deadline_date:date, deadline_time:time, previous_id:string,
+    review_status:oneOf(['new','unreviewed','needs_verification','reviewed','paused']),
+    posting_status:oneOf(['upcoming','open','closed','changed','cancelled','unverified']),
+    requirements:relatedFields.requirements,sources:relatedFields.sources
   }},
-  schedules: {required:['posting_id','kind','title','start_date'], fields:{
+  schedules: {required:['posting_id','kind','title'], fields:{
     posting_id:string, kind:string, title:string, start_date:date, end_date:date, start_time:time,
-    end_time:time, location:string, condition_note:string, ...evidence, status:value=>{
-      check(['planned','conditional','completed','cancelled'].includes(value), 'Unknown schedule status');
-      return value;
-    }
+    end_time:time, location:string, condition_note:string, ...evidence,
+    status:oneOf(['planned','conditional','completed','cancelled']), certainty:oneOf(['planned','confirmed','unverified']),
+    predecessor_id:string, arrival_time:time, admission_deadline:time, preparation:string, notes:string
   }}
 };
 export function fieldsFor(schema, data, partial) {
@@ -55,7 +71,8 @@ export function fieldsFor(schema, data, partial) {
   const values = {};
   for (const [key, value] of Object.entries(data)) {
     check(Object.hasOwn(schema.fields,key), 'Unknown field: ' + key);
-    values[key] = value === null && !schema.required.includes(key) ? null : schema.fields[key](value);
+    const optional = !schema.required.includes(key) && !['status','certainty','review_status','posting_status',...relationFields].includes(key);
+    values[key] = value === null && optional ? null : schema.fields[key](value);
   }
   if (!partial) for (const key of schema.required) check(Object.hasOwn(values,key), 'Missing field: ' + key);
   if (partial) check(Object.keys(values).length > 0, 'Empty patch');
