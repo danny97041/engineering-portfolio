@@ -1,0 +1,7 @@
+.state/
+.env
+.env.*
+!.env.example
+*.sqlite*
+node_modules/
+dist/
