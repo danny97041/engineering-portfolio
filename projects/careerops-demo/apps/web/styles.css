@@ -84,6 +84,8 @@ dialog::backdrop{background:#0e192a99}
 .day strong{display:block;font-size:14px}
 .day button{margin-top:4px;font-size:13px;text-align:left;padding:4px;width:100%}
 .day.current{background:var(--accent-soft)}
+.fit-score{display:flex;align-items:center;gap:8px;font-variant-numeric:tabular-nums}
+progress{accent-color:var(--accent);width:100%;min-width:65px;max-width:110px}
 pre{max-width:100%;overflow:auto;white-space:pre-wrap;background:var(--soft);padding:12px;border-radius:8px}
 @media(max-width:830px){.shell{grid-template-columns:1fr}.sidebar{height:auto;position:static;padding:12px;gap:10px}.sidebar nav{display:flex;overflow:auto;white-space:nowrap}.side-bottom{position:absolute;top:11px;right:12px}.topbar{margin-bottom:14px}}
 @media(max-width:500px){.calendar{grid-template-columns:repeat(2,minmax(0,1fr))}.calendar .blank{display:none}main{padding-top:14px}.card{padding:14px}}

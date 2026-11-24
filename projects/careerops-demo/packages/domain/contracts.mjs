@@ -55,6 +55,10 @@ export const resources = {
   job_postings: {required:['company_id','round_key','role_code','title'], fields:{
     company_id:string, round_key:string, role_code:string, title:string, responsibilities:string, location:string,
     headcount:uint, compensation:string, employment_type:string, deadline_date:date, deadline_time:time, previous_id:string,
+    posting_number:string, open_date:date, content_hash:value=>{
+      check(typeof value==='string' && /^[a-f0-9]{64}$/.test(value),'Expected SHA-256');
+      return value;
+    },
     review_status:oneOf(['new','unreviewed','needs_verification','reviewed','paused']),
     posting_status:oneOf(['upcoming','open','closed','changed','cancelled','unverified']),
     requirements:relatedFields.requirements,sources:relatedFields.sources

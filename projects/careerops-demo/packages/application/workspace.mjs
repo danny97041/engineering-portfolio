@@ -99,15 +99,23 @@ export function workspace(service,actor) {
   const postings = service.read(actor,'job_postings');
   const apps = applications(service,actor);
   const byPosting = new Map(apps.map(row=>[row.posting_id,row]));
+  const exclusions = db.prepare('SELECT company_id,posting_id FROM exclusions').all();
+  const blockedCompanies = new Set(exclusions.map(row=>row.company_id).filter(Boolean));
+  const blockedPostings = new Set(exclusions.map(row=>row.posting_id).filter(Boolean));
+  const blocked = new Set(postings.filter(row=>blockedCompanies.has(row.company_id) || blockedPostings.has(row.id)).map(row=>row.id));
   const rows = service.read(actor,'schedules');
-  const schedules = rows.map(item=>({...item,bucket:scheduleState(item,today,byPosting.get(item.posting_id))}));
+  const schedules = rows.map(item=>{
+    const bucket=scheduleState(item,today,byPosting.get(item.posting_id));
+    const excluded=blocked.has(item.posting_id);
+    return {...item,excluded,bucket:excluded && bucket!=='history'?'excluded':bucket};
+  });
   const conflicts = overlappingSchedules(schedules);
   const active = schedules.filter(item=>item.bucket==='active');
   const upcoming = addDays(today,7);
-  const near = postings.filter(row=>row.deadline_date >= today && row.deadline_date <= upcoming && !applicationInactive(byPosting.get(row.id)));
-  const waiting = apps.filter(row=>['screening_pending','final_pending'].includes(row.stage) && !applicationInactive(row));
+  const near = postings.filter(row=>row.deadline_date >= today && row.deadline_date <= upcoming && !applicationInactive(byPosting.get(row.id)) && !blocked.has(row.id));
+  const waiting = apps.filter(row=>['screening_pending','final_pending'].includes(row.stage) && !applicationInactive(row) && !blocked.has(row.posting_id));
   const reviews = postings.filter(row=>['new','unreviewed','needs_verification'].includes(row.review_status));
-  const missingVerification = postings.filter(row=>!db.prepare('SELECT 1 FROM job_sources WHERE posting_id=? AND verified_on IS NOT NULL LIMIT 1').get(row.id));
+  const missingVerification = postings.filter(row=>!blocked.has(row.id) && !db.prepare('SELECT 1 FROM job_sources WHERE posting_id=? AND verified_on IS NOT NULL LIMIT 1').get(row.id));
   return {
     today,companies,postings,applications:apps,
     schedules:schedules.map(row=>({...row,conflict:conflicts.has(row.id)})),
@@ -120,6 +128,9 @@ export function workspace(service,actor) {
       verified:db.prepare('SELECT max(verified_on) AS date FROM job_sources').get().date
     },
     focus:{deadlines:near.map(row=>row.id),waiting:waiting.map(row=>row.posting_id),verification:missingVerification.map(row=>row.id)},
-    activity:db.prepare('SELECT seq,entity,record_id,changed_at,before_json,after_json FROM change_logs ORDER BY seq DESC LIMIT 24').all()
+    activity:db.prepare(`SELECT seq,entity,record_id,actor,correlation_id,changed_at,
+      CASE WHEN entity='profiles' THEN '{"redacted":true}' ELSE before_json END AS before_json,
+      CASE WHEN entity='profiles' THEN '{"redacted":true}' ELSE after_json END AS after_json
+      FROM change_logs ORDER BY seq DESC LIMIT 24`).all()
   };
 }

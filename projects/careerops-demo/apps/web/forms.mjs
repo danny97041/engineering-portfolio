@@ -41,6 +41,8 @@ export function postingFields(t, data, row) {
     field('title',t('대표 직무','Role title'),'text',{required:true}),
     field('round_key',t('모집 회차','Recruitment round'),'text',{required:true}),
     field('role_code',t('직무 코드','Role code'),'text',{required:true}),
+    field('posting_number',t('공고 번호','Posting number')),
+    field('open_date',t('접수 시작일','Opening date'),'date'),
     field('location',t('근무지역','Work location')),field('employment_type',t('고용형태','Employment type')),
     field('headcount',t('모집인원','Headcount'),'number',{min:0,parse:Number}),field('compensation',t('처우','Compensation')),
     field('deadline_date',t('마감일','Deadline date'),'date'),field('deadline_time',t('마감 시각','Deadline time'),'time'),

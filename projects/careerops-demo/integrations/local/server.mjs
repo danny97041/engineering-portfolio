@@ -10,6 +10,7 @@ const assets = {
   '/assets/forms.mjs':['text/javascript','../../apps/web/forms.mjs'],
   '/assets/dom.mjs':['text/javascript','../../apps/web/dom.mjs'],
   '/assets/exports.mjs':['text/javascript','../../apps/web/exports.mjs'],
+  '/assets/analysis.mjs':['text/javascript','../../apps/web/analysis.mjs'],
   '/assets/workflow.mjs':['text/javascript','../../packages/domain/workflow.mjs'],
   '/assets/contracts.mjs':['text/javascript','../../packages/domain/contracts.mjs']
 };

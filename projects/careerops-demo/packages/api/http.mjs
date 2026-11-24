@@ -1,9 +1,18 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { ApiError, check, object } from '../domain/contracts.mjs';
 import { applications, changeApplication, previewEdits, undoEdit, workspace } from '../application/workspace.mjs';
+import { analysisIndex, ingestPosting, intakeQueue, recordAssessment, reviewPosting, setExclusion, updateFacts, updateWeights } from '../application/analysis.mjs';
 
 export const MAX_BODY = 16384;
 const digest = value => createHash('sha256').update(value).digest();
+async function jsonBody(request) {
+  check(request.headers.get('content-type')?.split(';')[0].trim() === 'application/json','Expected application/json',415);
+  const raw = await request.text();
+  check(Buffer.byteLength(raw) <= MAX_BODY,'Request too large',413);
+  let body;
+  try { body = JSON.parse(raw); } catch { throw new ApiError(400,'Invalid JSON'); }
+  return object(body);
+}
 export function createHandler(service, realm, stage, ownerKey, readerKey) {
   const prefix = realm + '.' + stage + '.';
   const valid = key => typeof key === 'string' && key.startsWith(prefix) && /^[A-Za-z0-9_-]{43}$/.test(key.slice(prefix.length));
@@ -21,10 +30,21 @@ export function createHandler(service, realm, stage, ownerKey, readerKey) {
       check(actor,'Invalid credential',401);
       const url = new URL(request.url);
       check(!url.search, 'Unknown query parameter',400);
-      const match = /^\/api\/v1\/(companies|job_postings|schedules|profile|applications|workspace|job_details|undo|batch_preview)(?:\/([\w-]+))?$/.exec(url.pathname);
+      const match = /^\/api\/v1\/(companies|job_postings|schedules|profile|applications|workspace|job_details|undo|batch_preview|analysis|analysis_facts|analysis_weights|assessments|intake|exclusions)(?:\/([\w-]+))?$/.exec(url.pathname);
       check(match,'Route not found',404);
       const [,type,id] = match;
       const method = request.method;
+      if (['analysis','analysis_facts','analysis_weights','assessments','intake','exclusions'].includes(type)) {
+        service.authorize(actor,true);
+        if (type==='analysis' && method==='GET') return json(200,id?reviewPosting(service,actor,id):analysisIndex(service,actor));
+        if (type==='intake' && !id && method==='GET') return json(200,intakeQueue(service,actor));
+        if (type==='analysis_facts' && id && method==='PUT') return json(200,updateFacts(service,actor,id,await jsonBody(request)));
+        if (type==='analysis_weights' && !id && method==='PUT') return json(200,updateWeights(service,actor,await jsonBody(request)));
+        if (type==='assessments' && id && method==='POST') return json(200,recordAssessment(service,actor,id,await jsonBody(request)));
+        if (type==='intake' && !id && method==='POST') return json(200,ingestPosting(service,actor,await jsonBody(request)));
+        if (type==='exclusions' && !id && method==='PUT') return json(200,setExclusion(service,actor,await jsonBody(request)));
+        throw new ApiError(405,'Method not allowed');
+      }
       if (type==='undo') {
         check(method==='POST' && /^[1-9]\d*$/.test(id ?? ''),'Route not found',404);
         return json(200,undoEdit(service,actor,id));
@@ -54,14 +74,7 @@ export function createHandler(service, realm, stage, ownerKey, readerKey) {
       const tag = request.headers.get('if-match');
       if (!creating) check(/^"[1-9]\d*"$/.test(tag ?? ''),'Provide If-Match with quoted version',428);
       const version = creating ? undefined : Number(tag.slice(1,-1));
-      let body;
-      if (!deleting) {
-        check(request.headers.get('content-type')?.split(';')[0].trim() === 'application/json','Expected application/json',415);
-        const raw = await request.text();
-        check(Buffer.byteLength(raw) <= MAX_BODY,'Request too large',413);
-        try { body = JSON.parse(raw); } catch { throw new ApiError(400,'Invalid JSON'); }
-        object(body);
-      }
+      const body = deleting ? undefined : await jsonBody(request);
       if (type==='batch_preview') return json(200,previewEdits(service,actor,body));
       const data = isProfile ? service.setProfile(actor,version,body) :
         type === 'applications' ? changeApplication(service,actor,id,version,body) : service.mutate(actor,type,id,version,body);

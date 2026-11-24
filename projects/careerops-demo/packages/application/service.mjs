@@ -22,13 +22,14 @@ export class CareerService {
     const {sql,args} = catalogQuery(type,id,this.binding.realm,this.binding.stage);
     return catalogResult(this.db.prepare(sql).all(...args),id);
   }
-  audit(actor,type,id,before,after) {
-    this.db.prepare('INSERT INTO change_logs(entity,record_id,actor,before_json,after_json,changed_at) VALUES (?,?,?,?,?,?)')
-      .run(type,id,actor,before ? JSON.stringify(before) : null,JSON.stringify(after),new Date().toISOString());
+  audit(actor,type,id,before,after,correlationId=randomUUID()) {
+    this.db.prepare('INSERT INTO change_logs(entity,record_id,actor,before_json,after_json,changed_at,correlation_id) VALUES (?,?,?,?,?,?,?)')
+      .run(type,id,actor,before ? JSON.stringify(before) : null,JSON.stringify(after),new Date().toISOString(),correlationId);
   }
   checkLinks(actor,type,row,id) {
     if (type === 'job_postings') {
       this.read(actor,'companies',row.company_id);
+      check(!row.open_date || !row.deadline_date || row.open_date<=row.deadline_date,'Opening is after deadline');
       const seen = new Set([id]);
       let previous = row.previous_id;
       while (previous) {
@@ -85,7 +86,7 @@ export class CareerService {
       for (const {url,verified_on,evidence} of changes.sources) insert.run(randomUUID(),id,url,verified_on ?? null,evidence ?? null);
     }
   }
-  mutate(actor,type,id,version,patch) {
+  mutate(actor,type,id,version,patch,correlationId) {
     this.authorize(actor,true);
     const schema = this.resource(type);
     const creating = id === undefined;
@@ -123,7 +124,7 @@ export class CareerService {
         }
         this.writeRelations(id,relations);
         const after = this.db.prepare('SELECT * FROM '+type+' WHERE id=?').get(id);
-        this.audit(actor,type,id,before ? {...before,...previousRelations} : null,{...after,...this.relations(type,id)});
+        this.audit(actor,type,id,before ? {...before,...previousRelations} : null,{...after,...this.relations(type,id)},correlationId);
         return after;
       });
     } catch (error) {
