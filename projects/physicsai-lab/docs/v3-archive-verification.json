@@ -1,0 +1,131 @@
+{
+  "archive_sha256": "311d0756d342d442e33f4003a30e795a1e7f1bf06c8d408bf3783b62d4b0bfcf",
+  "archive_members": 504,
+  "experiments": 65,
+  "manifest_files_checked": 503,
+  "seeds_by_equation": {
+    "wave2d": [
+      3234,
+      3235,
+      3236
+    ],
+    "heat2d": [
+      3234,
+      3235,
+      3236
+    ],
+    "poisson2d": [
+      3234
+    ],
+    "burgers": [
+      3234
+    ],
+    "darcy2d": [
+      3234
+    ],
+    "reaction_diffusion": [
+      3234
+    ],
+    "kovasznay_forward": [
+      3234
+    ],
+    "kovasznay_inverse": [
+      3234
+    ],
+    "taylor_green": [
+      3234
+    ]
+  },
+  "methods": [
+    "baseline",
+    "ff",
+    "ff_curriculum",
+    "ff_loss_sa",
+    "loss_sa"
+  ],
+  "aggregated_rows_checked": 45,
+  "weights": {
+    "HDF5": 15,
+    "NPZ": 50
+  },
+  "embedded_source_files_checked": 22,
+  "validation_records": {
+    "actual_llm.json": {
+      "passed": true,
+      "scope": "imported_historical",
+      "status_digest_matches": true
+    },
+    "current.json": {
+      "passed": true,
+      "scope": "imported_historical",
+      "status_digest_matches": false
+    },
+    "form_local.json": {
+      "passed": true,
+      "scope": "current_local_form",
+      "status_digest_matches": true
+    },
+    "hybrid_rag.json": {
+      "passed": true,
+      "scope": "imported_historical",
+      "status_digest_matches": true
+    },
+    "llm_intent_baseline.json": {
+      "passed": null,
+      "scope": "imported_historical",
+      "status_digest_matches": true
+    },
+    "local_verification.json": {
+      "passed": null,
+      "scope": "imported_historical",
+      "status_digest_matches": true
+    },
+    "patch_local.json": {
+      "passed": false,
+      "scope": "previous_local_patch",
+      "status_digest_matches": true
+    },
+    "publication_current_local.json": {
+      "passed": true,
+      "scope": "current_local_form",
+      "status_digest_matches": true
+    },
+    "rules_api.json": {
+      "passed": true,
+      "scope": "imported_historical",
+      "status_digest_matches": true
+    },
+    "service_local.json": {
+      "passed": true,
+      "scope": "current_local_form",
+      "status_digest_matches": true
+    },
+    "source_current_local.json": {
+      "passed": null,
+      "scope": "current_local_form",
+      "status_digest_matches": true
+    },
+    "status.json": {
+      "passed": null,
+      "scope": "imported_historical",
+      "status_digest_matches": false
+    },
+    "submitted_colab_audit.json": {
+      "passed": true,
+      "scope": "imported_historical",
+      "status_digest_matches": true
+    },
+    "training_settings.json": {
+      "passed": null,
+      "scope": "imported_historical",
+      "status_digest_matches": true
+    },
+    "wave_handoff_local.json": {
+      "passed": true,
+      "scope": "previous_local_patch",
+      "status_digest_matches": true
+    }
+  },
+  "submitted_colab_run": "validation/runs/9f88d997.json",
+  "forward_trials_with_coefficient_error": 0
+}

@@ -1,0 +1,43 @@
+{
+  "commit": "374051dc307aa0a66b58e6816c7e97e6dbbfe9b7",
+  "routes": [
+    "/agent/ask",
+    "/agent/tool",
+    "/comparison",
+    "/health",
+    "/model/info",
+    "/models",
+    "/predict",
+    "/predict/active",
+    "/predict/batch",
+    "/rag/context",
+    "/rag/search",
+    "/registry",
+    "/registry/activate",
+    "/registry/rollback",
+    "/report"
+  ],
+  "probe_points": 3,
+  "models_attempted": 65,
+  "models_passed": 65,
+  "max_batch_single_delta": 5.085021257400513e-07,
+  "failures": [],
+  "api": {
+    "health": 200,
+    "comparison": 200,
+    "batch_predict": 200,
+    "outside_domain": 422,
+    "extra_field": 422,
+    "disabled_registry": 403,
+    "keyword_retrieval": 200
+  },
+  "runtime": {
+    "numpy": "2.5.5",
+    "tensorflow": "2.20.0",
+    "keras": "3.15.1",
+    "fastapi": "0.121.3",
+    "pydantic": "2.14.4",
+    "httpx": "0.28.1",
+    "scipy": "1.16.3"
+  }
+}
