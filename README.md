@@ -6,5 +6,5 @@ A portfolio of software engineering, AI systems, and scientific machine learning
 
 | Project | Scope | Latest checkpoint |
 |---|---|---|
-| [CareerOps Demo](projects/careerops-demo/README.md) | Recruitment tracking, scheduling, and evidence-based screening with synthetic data | [CareerOps v4.2 candidate · Review and security](https://github.com/danny97041/engineering-portfolio/tree/careerops-v4.2-candidate/projects/careerops-demo) |
-| [PhysicsAI Lab](projects/physicsai-lab/README.md) | [65 PINN experiments and numerical comparisons](projects/physicsai-lab/results/README.md) | [Phase 12 · Browser inference and research services](https://github.com/danny97041/engineering-portfolio/tree/physicsai-lab-phase-12/projects/physicsai-lab) |
+| [CareerOps Demo](projects/careerops-demo/README.md) | Recruitment tracking, scheduling, and evidence-based screening with synthetic data | [Unreviewed posting analysis candidate](https://github.com/danny97041/engineering-portfolio/tree/careerops-analysis-candidate/projects/careerops-demo) |
+| [PhysicsAI Lab](projects/physicsai-lab/README.md) | [65 PINN experiments and numerical comparisons](projects/physicsai-lab/results/README.md) | [Phase 14-A · Bilingual research results and Colab import](projects/physicsai-lab/docs/PHASE_14A_CHECKPOINT.md) |
