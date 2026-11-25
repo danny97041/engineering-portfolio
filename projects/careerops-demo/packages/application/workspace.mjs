@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { scanHistory } from './scans.mjs';
 import { ApiError, check, fieldsFor, object, resources, string, versionNumber } from '../domain/contracts.mjs';
 import { addDays, applicationChange, applicationInactive, overlappingSchedules, scheduleState, seoulDate } from '../domain/workflow.mjs';
 import { transaction } from '../database/local.mjs';
@@ -117,7 +118,7 @@ export function workspace(service,actor) {
   const reviews = postings.filter(row=>['new','unreviewed','needs_verification'].includes(row.review_status));
   const missingVerification = postings.filter(row=>!blocked.has(row.id) && !db.prepare('SELECT 1 FROM job_sources WHERE posting_id=? AND verified_on IS NOT NULL LIMIT 1').get(row.id));
   return {
-    today,companies,postings,applications:apps,
+    today,companies,postings,applications:apps,scanHistory:scanHistory(service,{limit:8}),
     schedules:schedules.map(row=>({...row,conflict:conflicts.has(row.id)})),
     aliases:db.prepare('SELECT alias,company_id FROM company_aliases ORDER BY alias').all(),
     metrics:{

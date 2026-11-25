@@ -6,4 +6,4 @@ A portfolio of software engineering, AI systems, and scientific machine learning
 
 | Project | Scope | Latest checkpoint |
 |---|---|---|
-| [CareerOps Demo](projects/careerops-demo/README.md) | Recruitment tracking, scheduling, and evidence-based screening with synthetic data | [Phase 3 · Eligibility, fit, and intake](https://github.com/danny97041/engineering-portfolio/tree/careerops-demo-phase-3/projects/careerops-demo) |
+| [CareerOps Demo](projects/careerops-demo/README.md) | Recruitment tracking, scheduling, and evidence-based screening with synthetic data | [Phase 4 · REST, MCP, and scan recovery](https://github.com/danny97041/engineering-portfolio/tree/careerops-demo-phase-4/projects/careerops-demo) |

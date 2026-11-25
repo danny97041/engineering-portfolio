@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { gateway } from './gateway.mjs';
 import { ApiError, check, object } from '../domain/contracts.mjs';
 import { applications, changeApplication, previewEdits, undoEdit, workspace } from '../application/workspace.mjs';
 import { analysisIndex, ingestPosting, intakeQueue, recordAssessment, reviewPosting, setExclusion, updateFacts, updateWeights } from '../application/analysis.mjs';
@@ -29,6 +30,8 @@ export function createHandler(service, realm, stage, ownerKey, readerKey) {
       const actor = timingSafeEqual(key,owner) ? 'owner' : reader && timingSafeEqual(key,reader) ? 'reader' : null;
       check(actor,'Invalid credential',401);
       const url = new URL(request.url);
+      const response=await gateway(service,actor,request,url,json,jsonBody);
+      if (response) return response;
       check(!url.search, 'Unknown query parameter',400);
       const match = /^\/api\/v1\/(companies|job_postings|schedules|profile|applications|workspace|job_details|undo|batch_preview|analysis|analysis_facts|analysis_weights|assessments|intake|exclusions)(?:\/([\w-]+))?$/.exec(url.pathname);
       check(match,'Route not found',404);

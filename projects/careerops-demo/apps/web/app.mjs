@@ -39,7 +39,8 @@ async function api(path,method='GET',body,version) {
   const headers = {authorization:'Bearer '+state.token};
   if (body!==undefined) headers['content-type']='application/json';
   if (version!==undefined) headers['if-match']='"'+version+'"';
-  const response = await fetch('/api/v1/'+path,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});
+  const route=path.startsWith('/api/')?path:'/api/v1/'+path;
+  const response = await fetch(route,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});
   const data = await response.json();
   if (!response.ok) {
     if (response.status===401 && state.data) {
@@ -406,9 +407,23 @@ function previewBatch() {
       } catch(error) { results.textContent=error.message; }
     },{class:'primary'}),results));
 }
+async function showScan(id) {
+  const run=await api('/api/automations/runs/'+encodeURIComponent(id));
+  openPanel(t('스캔 근거','Scan evidence'),t,h('div',{class:'stack'},
+    h('pre',{},JSON.stringify(run.items,null,2)),run.retryable?button(t('이 실행 재시도','Retry this run'),()=>safe(async()=>{
+      const result=await api('/api/automations/runs/'+encodeURIComponent(id),'POST',{key:crypto.randomUUID()});
+      await load();report(result.status+(result.last_error?' · '+result.last_error:''));
+      await showScan(id);
+    })):null));
+}
 function activity() {
   const logs=state.data.activity;
-  return [heading('activity',button(t('일괄 수정 드라이런','Preview batch edits'),previewBatch)),table([t('변경 시각','Changed at'),t('대상','Entity'),t('작업','Action'),t('보기','Details')],
+  const scans=state.data.scanHistory;
+  return [heading('activity',button(t('일괄 수정 드라이런','Preview batch edits'),previewBatch)),
+    card(t('스캔 실행 이력','Scan history'),h('p',{},t('최근 성공','Last success')+' '+(scans.lastSuccess??'—')+' · '+t('최근 실패','Last failure')+' '+(scans.lastFailure??'—')+' · '+t('다음 예약','Next scheduled')+' '+(scans.nextScheduledAt??t('연결 미확인','Unverified'))),
+      table([t('시작','Started'),t('상태','Status'),t('결과별 건수','Outcomes'),t('시도','Attempts'),'ms',t('오류','Error')],
+      scans.items.map(r=>[button(r.started_at,()=>safe(()=>showScan(r.id))),r.status,Object.entries(r.counts).map(([k,v])=>k+' '+v).join(', '),String(r.attempts),String(r.durationMs),r.last_error??'—']),t('최근 스캔','Recent scans'),empty())),
+    table([t('변경 시각','Changed at'),t('대상','Entity'),t('작업','Action'),t('보기','Details')],
     logs.map(row=>[row.changed_at,row.entity,row.before_json?t('수정','Update'):t('생성','Create'),
       button(t('변경 전후','Before and after'),()=>auditDetail(row))]),titleFor('activity'),empty())];
 }

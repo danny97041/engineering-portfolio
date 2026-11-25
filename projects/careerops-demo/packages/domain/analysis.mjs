@@ -110,8 +110,9 @@ export function normalizeSource(url) {
 
 export function identifyPosting(input,rows,sources) {
   const title=normalizeText(input.title);
-  const exact=rows.find(row=>normalizeText(row.round_key)===normalizeText(input.round_key) && normalizeText(row.role_code)===normalizeText(input.role_code));
-  if (exact) return {decision:'merge',id:exact.id};
+  const exact=rows.filter(row=>normalizeText(row.round_key)===normalizeText(input.round_key) && normalizeText(row.role_code)===normalizeText(input.role_code));
+  if (exact.length>1) return {decision:'review',ids:exact.map(row=>row.id)};
+  if (exact.length===1) return {decision:'merge',id:exact[0].id};
   const requested = new Set(sources.map(normalizeSource));
   const candidates=rows.filter(row=>{
     const sameTitle=normalizeText(row.title)===title;

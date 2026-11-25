@@ -2,7 +2,7 @@
 
 A browser-based recruitment tracker built around job postings, application records, and interview schedules. The demo uses synthetic data and persists edits in a local SQLite database.
 
-| Capability | Phase 3 |
+| Capability | Phase 4 |
 |---|---|
 | Companies, job postings, and schedules | Create, read, edit, and soft-delete |
 | Date-only and multi-day events | Preserve unknown times and both dates |
@@ -14,6 +14,8 @@ A browser-based recruitment tracker built around job postings, application recor
 | Eligibility and fit | Evidence-based rules, versioned scores, and criterion-level comparisons |
 | Posting intake | Idempotent registration, source merge, and duplicate review queue |
 | Analytics | SQLite aggregates and measured local processing |
+| Integrations | Authenticated REST and MCP, role-scoped tool discovery, interactive schedule resource |
+| Scan recovery | Atomic batches, source evidence, conflict review, durable retries and run history |
 | Deployment | Local loopback browser app and API |
 
 ## Run the demo
@@ -69,4 +71,6 @@ HTTP → input and identity checks → application service → SQLite transactio
 node --test
 ```
 
-The 28 automated tests exercise eligibility boundaries, evidence and score versions, intake idempotency, authorization, schema upgrades, workflow transitions, and calendar export. A browser smoke test confirmed rule outcomes, partial-score coverage, comparison bars, and analytics.
+The 37 automated tests cover eligibility, evidence and score versions, intake idempotency, authorization, schema upgrades, workflow transitions, calendar export, REST/MCP writes, scan recovery and Site-principal isolation. A previous browser smoke test confirmed rule outcomes, partial-score coverage, comparison bars and analytics.
+
+[Gateway contract and synthetic import example](docs/GATEWAY.md)
