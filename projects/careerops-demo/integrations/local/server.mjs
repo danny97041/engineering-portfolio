@@ -16,10 +16,10 @@ const assets = {
   '/assets/contracts.mjs':['text/javascript','../../packages/domain/contracts.mjs']
 };
 
-export function startServer(db,{realm,stage,ownerKey,readerKey,port}) {
+export function startServer(db,{realm,stage,ownerKey,readerKey,port,sandboxReset}) {
   const binding = db.prepare('SELECT realm,stage FROM instance_binding').get();
   if (binding.realm !== realm || binding.stage !== stage) throw Error('Storage binding mismatch');
-  const handle = createHandler(new CareerService(db),realm,stage,ownerKey,readerKey);
+  const handle = createHandler(new CareerService(db),realm,stage,ownerKey,readerKey,sandboxReset);
   const server = createServer(async (incoming,out)=>{
     try {
       const target = new URL(incoming.url,'http://127.0.0.1');

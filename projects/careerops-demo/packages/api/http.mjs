@@ -15,7 +15,7 @@ async function jsonBody(request) {
   try { body = JSON.parse(raw); } catch { throw new ApiError(400,'Invalid JSON'); }
   return object(body);
 }
-export function createHandler(service, realm, stage, ownerKey, readerKey) {
+export function createHandler(service, realm, stage, ownerKey, readerKey, sandboxReset) {
   const prefix = realm + '.' + stage + '.';
   const valid = key => typeof key === 'string' && key.startsWith(prefix) && /^[A-Za-z0-9_-]{43}$/.test(key.slice(prefix.length));
   if (!valid(ownerKey) || (readerKey !== undefined && (!valid(readerKey) || readerKey === ownerKey)))
@@ -31,6 +31,13 @@ export function createHandler(service, realm, stage, ownerKey, readerKey) {
       const actor = timingSafeEqual(key,owner) ? 'owner' : reader && timingSafeEqual(key,reader) ? 'reader' : null;
       check(actor,'Invalid credential',401);
       const url = new URL(request.url);
+      if (url.pathname==='/api/sandbox') {
+        check(!url.search,'Unknown query parameter',400);
+        if (request.method==='GET') return json(200,{enabled:Boolean(sandboxReset)});
+        service.authorize(actor,true);
+        check(request.method==='POST' && sandboxReset && realm==='demo' && stage==='development','Sandbox reset unavailable',404);
+        return json(200,sandboxReset());
+      }
       const advancedResponse=await advanced(service,actor,request,url,json,jsonBody);
       if (advancedResponse) return advancedResponse;
       const response=await gateway(service,actor,request,url,json,jsonBody);

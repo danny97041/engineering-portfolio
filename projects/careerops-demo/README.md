@@ -2,7 +2,7 @@
 
 A browser-based recruitment tracker built around job postings, application records, and interview schedules. The demo uses synthetic data and persists edits in a local SQLite database.
 
-| Capability | Phase 4 |
+| Capability | Phase 6 |
 |---|---|
 | Companies, job postings, and schedules | Create, read, edit, and soft-delete |
 | Date-only and multi-day events | Preserve unknown times and both dates |
@@ -16,9 +16,16 @@ A browser-based recruitment tracker built around job postings, application recor
 | Analytics | SQLite aggregates and measured local processing |
 | Integrations | Authenticated REST and MCP, role-scoped tool discovery, interactive schedule resource |
 | Scan recovery | Atomic batches, source evidence, conflict review, durable retries and run history |
+| Career records | Interviews, shared study references and document metadata |
+| Recovery | Versioned import, full and incremental SQLite backups with integrity checks |
+| Synthetic sandbox | Independent dataset and key per launch, MCP playground and reset |
 | Deployment | Local loopback browser app and API |
 
 ## Run the demo
+
+Run `node scripts/demo.mjs` from this project directory. Open the printed URL and enter the session key. The isolated portfolio sandbox starts with 72 synthetic postings and has an MCP Playground with a reset button. [Demo walkthrough](docs/PORTFOLIO.md) · [Import and recovery](docs/EXCHANGE.md)
+
+### Persistent starter workspace
 
 Requires Node.js 24.22.3 or later. The demo has no package installation step. Open a PowerShell terminal at the repository root.
 
@@ -71,6 +78,6 @@ HTTP → input and identity checks → application service → SQLite transactio
 node --test
 ```
 
-The 37 automated tests cover eligibility, evidence and score versions, intake idempotency, authorization, schema upgrades, workflow transitions, calendar export, REST/MCP writes, scan recovery and Site-principal isolation. A previous browser smoke test confirmed rule outcomes, partial-score coverage, comparison bars and analytics.
+The 42 automated tests cover eligibility, evidence, intake idempotency, permissions, schema upgrades, calendar export, REST/MCP writes, scan recovery, Work exchange, backup restoration and sandbox isolation. A previous browser smoke test confirmed rule outcomes, partial-score coverage, comparison bars and analytics.
 
 [Gateway contract and synthetic import example](docs/GATEWAY.md)

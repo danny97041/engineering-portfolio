@@ -3,6 +3,37 @@ import { openPanel } from './forms.mjs';
 import { csv, markdown, ics } from './exports.mjs';
 
 const json=value=>JSON.stringify(value,null,2);
+export function playgroundPanel({api,t,safe,load,data}){
+  const output=h('pre',{role:'status'});
+  const input=h('textarea',{rows:10,value:'{}','aria-label':t('도구 입력 JSON','Tool arguments JSON')});
+  const picker=select([['get_dashboard','get_dashboard']],'get_dashboard');
+  const mcp=async(method,params)=>api('/mcp','POST',{jsonrpc:'2.0',id:crypto.randomUUID(),method,params});
+  const run=()=>safe(async()=>{
+    const response=await mcp('tools/call',{name:picker.value,arguments:JSON.parse(input.value)});
+    output.textContent=json(response);
+  });
+  safe(async()=>{
+    const response=await mcp('tools/list',{});
+    picker.replaceChildren(...response.result.tools.map(tool=>h('option',{value:tool.name},tool.name)));
+    picker.value='get_dashboard';
+  });
+  const sample=()=>{
+    const company=data.companies[0];
+    if(!company) return;
+    picker.value='record_scan_run';
+    const key=crypto.randomUUID();
+    input.value=json({key,items:[{company:company.name,source:'https://example.invalid/playground/'+key,
+      evidence:'Synthetic scan fixture',observedAt:new Date().toISOString(),posting:{round_key:'playground-'+key,role_code:'thermal',title:'합성 열유동 공고'}}]});
+  };
+  return h('section',{class:'stack'},
+    h('p',{},t('이 세션의 합성 데이터에 실제 로컬 MCP를 호출합니다. 스캔 예제는 합성 입력을 사용합니다.','Calls use the real local MCP gateway for this synthetic session. The scan sample supplies simulated input.')),
+    h('label',{},t('도구 선택','Tool'),picker),input,
+    h('div',{class:'actions'},button(t('합성 스캔 예제','Synthetic scan example'),sample),button(t('도구 실행','Run tool'),run),
+      button(t('초기 데이터로 복원','Reset to seed'),()=>safe(async()=>{
+        if(!window.confirm(t('이 데모 세션을 초기화할까요?','Reset this demo session?'))) return;
+        await api('/api/sandbox','POST',{});await load();
+      }))),output);
+}
 export function commandsPanel({api,t,safe,load}){
   const input=h('input',{'aria-label':t('명령','Command'),placeholder:'일정표'});
   const result=h('div',{role:'status'});
@@ -17,7 +48,7 @@ export function commandsPanel({api,t,safe,load}){
         try {
           const saved=await api('/api/commands','POST',{text,confirmation:{postingId,postingVersion,applicationVersion,key}});
           result.replaceChildren(h('pre',{},json(saved)));
-          await load();
+          await load(false);
         } finally {confirm.disabled=false;}
       }));
       result.replaceChildren(h('p',{},[company,round,role].join(' / ')),h('pre',{},json(changes)),confirm);
@@ -78,7 +109,7 @@ export function exchangePanel({api,t,safe,load}){
   const status=h('pre',{role:'status'});
   const execute=mode=>safe(async()=>{
     status.textContent=json(await api('/api/exchange/'+mode,'POST',JSON.parse(input.value)));
-    if(mode==='import') await load();
+    if(mode==='import') await load(false);
   });
   const save=(mode,format)=>safe(async()=>{
     const suffix=mode==='changes'?'&after='+cursor.value:'';

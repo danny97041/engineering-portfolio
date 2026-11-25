@@ -3,7 +3,7 @@ import { applicationFields, companyFields, labelFor, openForm, openPanel, option
 import { csv, ics, markdown } from './exports.mjs';
 import { addDays } from './workflow.mjs';
 import { analysisLabel, analytics, jsonEditor, reviewPanel, showIntake } from './analysis.mjs';
-import { commandsPanel, exchangePanel, recordsPanel } from './advanced.mjs';
+import { commandsPanel, exchangePanel, recordsPanel, playgroundPanel } from './advanced.mjs';
 
 const preferences = {
   get(key,fallback) { try { return JSON.parse(localStorage.getItem('careerops.'+key)) ?? fallback; } catch { return fallback; } },
@@ -13,7 +13,7 @@ const pages = {overview:['개요','Overview'],schedule:['일정표','Schedule'],
   applications:['지원 현황','Applications'],unreviewed:['미분석 공고','Unreviewed Jobs'],
   assessments:['채용 분석','Assessments'],compare:['기업 비교','Compare'],analytics:['통계','Analytics'],
   records:['면접·문서','Interviews & Documents'],commands:['명령 팔레트','Command Palette'],exchange:['데이터 교환','Data Exchange'],
-  activity:['변경 이력','Activity Log'],settings:['설정','Settings'],engineering:['기술 정보','Engineering']};
+  activity:['변경 이력','Activity Log'],settings:['설정','Settings'],playground:['MCP 실습','MCP Playground'],engineering:['기술 정보','Engineering']};
 const state = {
   language:preferences.get('language','ko'),theme:preferences.get('theme','light'),page:preferences.get('home','overview'),
   token:'',data:null,analysis:null,query:'',pageNumber:0,selected:new Set(),details:new Map(),jobFilter:preferences.get('jobFilter',{}),
@@ -41,7 +41,7 @@ async function api(path,method='GET',body,version) {
   const headers = {authorization:'Bearer '+state.token};
   if (body!==undefined) headers['content-type']='application/json';
   if (version!==undefined) headers['if-match']='"'+version+'"';
-  const route=path.startsWith('/api/')?path:'/api/v1/'+path;
+  const route=path.startsWith('/')?path:'/api/v1/'+path;
   const response = await fetch(route,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});
   const data = await response.json();
   if (!response.ok) {
@@ -54,14 +54,15 @@ async function api(path,method='GET',body,version) {
   }
   return data;
 }
-async function load() {
-  const [data,analysis]=await Promise.all([api('workspace'),api('analysis')]);
+async function load(renderScreen=true) {
+  const [data,analysis,sandbox]=await Promise.all([api('workspace'),api('analysis'),api('/api/sandbox')]);
   state.data=data;
+  state.sandbox=sandbox.enabled;
   state.analysis=analysis;
   state.month ??=state.data.today.slice(0,7);
   state.details.clear();
   for (const id of state.selected) if (!posting(id)) state.selected.delete(id);
-  render();
+  if (renderScreen) render();
 }
 async function mutate(path,method,data,version) {
   await api(path,method,data,version);
@@ -439,12 +440,17 @@ function settings() {
 }
 function engineering() {
   return [heading('engineering'),card(t('실행 환경','Runtime'),h('p',{},t('Node.js HTTP 서버 · SQLite 파일 DB','Node.js HTTP server · SQLite file database')),
-    h('p',{},t('일정표 시간대 · Asia/Seoul','Schedule time zone · Asia/Seoul')))];
+    h('p',{},t('일정표 시간대 · Asia/Seoul','Schedule time zone · Asia/Seoul'))),
+    card(t('문제와 설계','Problem and design'),
+      h('p',{},t('기업과 모집 회차, 지원 결정, 일정과 근거를 연결해 변경 이력을 추적합니다.','The workspace connects recruiting rounds, application decisions, schedules and source evidence.')),
+      h('p',{},t('규칙 판정, 통계, 버전 검사는 로컬 코드가 실행합니다. 연결형 AI는 자료 검토와 도구 선택을 맡을 수 있습니다.','Deterministic code evaluates rules, aggregates metrics and checks versions. A connected AI client can review evidence and select tools.')),
+      h('p',{},t('면접과 문서는 메타데이터로 관리합니다. 호스팅 시험 환경은 별도의 합성 레코드를 사용합니다.','Interview and document records store metadata. The hosted test environment uses a separate synthetic dataset.')))];
 }
 const renderers={overview,schedule,jobs:()=>jobList(),unreviewed:()=>jobList(true),applications:appList,compare,activity,settings,engineering,
   records:()=>[heading('records'),recordsPanel({api,t,safe,data:state.data})],
   commands:()=>[heading('commands'),commandsPanel({api,t,safe,load})],
   exchange:()=>[heading('exchange'),exchangePanel({api,t,safe,load})],
+  playground:()=>[heading('playground'),playgroundPanel({api,t,safe,load,data:state.data})],
   assessments,analytics:()=>[heading('analytics'),analytics(state.analysis.stats,t)]};
 
 function render() {
@@ -457,7 +463,7 @@ function render() {
   $('global-search').disabled=!state.data;
   $('disconnect').textContent=t('연결 해제','Disconnect');
   $('disconnect').hidden=!state.data;
-  $('navigation').replaceChildren(...(state.data?Object.keys(pages).map(key=>button(titleFor(key),()=>navigate(key),
+  $('navigation').replaceChildren(...(state.data?Object.keys(pages).filter(key=>key!=='playground'||state.sandbox).map(key=>button(titleFor(key),()=>navigate(key),
     {'aria-current':state.page===key?'page':null})):[]));
   if (!state.data) { $('screen').replaceChildren(login()); return; }
   if (!Object.hasOwn(renderers,state.page)) state.page='overview';
