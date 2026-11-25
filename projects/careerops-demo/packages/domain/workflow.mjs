@@ -7,6 +7,7 @@ export const stages = [
 ];
 export const closedStages = new Set(['rejected','hired','closed']);
 const closedIntents = new Set(['declined','withdrawn']);
+const awaitingStages = new Set(['submitted','screening_pending','test_completed','interview_completed','final_pending']);
 
 export function nextStages(stage) {
   if (stage === 'not_submitted') return ['submitted'];
@@ -30,6 +31,7 @@ export function applicationChange(before, patch) {
 }
 export const applicationInactive = application => Boolean(application &&
   (closedIntents.has(application.intent) || closedStages.has(application.stage)));
+export const awaitingResult = application => awaitingStages.has(application.stage) && !applicationInactive(application);
 
 export function seoulDate(now = new Date()) {
   const parts = new Intl.DateTimeFormat('en',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'})

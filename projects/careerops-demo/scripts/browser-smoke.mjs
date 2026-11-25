@@ -12,6 +12,8 @@ const root=mkdtempSync(join(tmpdir(),'careerops-browser-')),db=openStore(root,'d
 let browser,server;
 try{
   seedPortfolio(db);
+  db.exec(`UPDATE schedules SET arrival_time='12:15',admission_deadline='12:15' WHERE id=(
+    SELECT id FROM schedules WHERE kind='interview' AND start_date IS NOT NULL LIMIT 1)`);
   const ownerKey='demo.development.'+randomBytes(32).toString('base64url');
   server=await startServer(db,{realm:'demo',stage:'development',ownerKey,sandboxReset:createSandboxReset(db),port:0});
   browser=await chromium.launch({executablePath:process.env.CAREEROPS_CHROME,headless:true});
@@ -46,6 +48,12 @@ try{
   console.log('PASS confirmed submission');
   await nav('일정표');assert.ok(await screen.locator('table').count()>0);
   await screen.getByRole('table').getByText(/적합도.*\/ 100/).first().waitFor();
+  const onRight=screen.locator('td:last-child .feature-tags');
+  await onRight.getByText('도착 마감 12:15',{exact:true}).waitFor();
+  await onRight.getByText('조건부',{exact:true}).first().waitFor();
+  await nav('공고 탐색');
+  await screen.getByRole('columnheader',{name:'특징',exact:true}).waitFor();
+  await screen.locator('td:last-child .feature-tags .pill').first().waitFor();
   await nav('개인화');
   const chat='https://chatgpt.com/c/synthetic-chat-id';
   const chatInput=screen.getByLabel('비공개 GPT 대화 주소');

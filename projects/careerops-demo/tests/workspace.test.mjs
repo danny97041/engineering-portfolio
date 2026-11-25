@@ -104,6 +104,19 @@ test('Phase 2 detects conflicts for overlapping timed events and refuses schedul
   assert.deepEqual(conflicts,[a.id,b.id].sort());
   assert.ok(!conflicts.includes(c.id));
 });
+test('Workspace waiting counts confirmed submissions and completed interviews until a later outcome',async()=>{
+  const submitted=await create('job_postings',{company_id:company.id,round_key:'awaiting-submission',role_code:'SIM',title:'Submitted fixture'});
+  const interviewed=await create('job_postings',{company_id:company.id,round_key:'awaiting-interview',role_code:'SIM',title:'Interviewed fixture'});
+  const original=await call('workspace');
+  await create('applications',{posting_id:submitted.id,stage:'submitted',confirm_submission:true});
+  const app=await create('applications',{posting_id:interviewed.id,stage:'submitted',confirm_submission:true});
+  await call('applications/'+app.id,'PATCH',{stage:'interview_completed'},app.version);
+  const waiting=await call('workspace');
+  assert.equal(waiting.metrics.waiting,original.metrics.waiting+2);
+  assert.ok(waiting.focus.waiting.includes(submitted.id)&&waiting.focus.waiting.includes(interviewed.id));
+  await call('applications/'+app.id,'PATCH',{stage:'rejected'},app.version+1);
+  assert.equal((await call('workspace')).metrics.waiting,original.metrics.waiting+1);
+});
 test('Phase 2 migration preserves existing dates, versions and integrity',()=>{
   const dir=join(root,'personal','development');
   // A v1 file is seeded via the isolated shell SQL, before the current migration runner reopens it.

@@ -40,6 +40,34 @@ function fitLabel(review){
 function fitBadge(id){
   return h('span',{class:'pill','aria-label':fitTitle()+' '+fitLabel(analysisFor(id))},fitTitle()+' '+fitLabel(analysisFor(id)));
 }
+function featureTags(tags){
+  const visible=tags.filter(Boolean);
+  return visible.length?h('div',{class:'feature-tags'},visible):null;
+}
+const feature=(label,tone='neutral')=>h('span',{class:'pill feature-tag','data-tone':tone},label);
+function postingFeatures(row){
+  const review=analysisFor(row.id);
+  return featureTags([
+    state.data.focus.deadlines.includes(row.id)&&feature(t('마감 임박','Deadline soon'),'attention'),
+    review?.excluded&&feature(t('제외','Excluded'),'attention'),
+    !review?.excluded&&review?.representative&&feature(t('대표 추천','Recommended'),'positive'),
+    !review?.excluded&&review?.eligibility==='FAIL'&&feature(t('검토 규칙 미통과','Screening rule unmet'),'attention'),
+    review?.eligibility==='UNKNOWN'&&feature(t('자격 확인 필요','Eligibility to verify')),
+    state.data.focus.verification.includes(row.id)&&feature(t('출처 확인 필요','Source to verify')),
+    state.data.focus.waiting.includes(row.id)&&feature(t('결과 대기','Awaiting result'))
+  ]);
+}
+function scheduleFeatures(row){
+  return featureTags([
+    row.arrival_time&&row.arrival_time===row.admission_deadline&&feature(t('도착 마감','Arrive by')+' '+row.arrival_time,'attention'),
+    row.arrival_time&&row.arrival_time!==row.admission_deadline&&feature(t('도착','Arrive')+' '+row.arrival_time),
+    row.admission_deadline&&row.admission_deadline!==row.arrival_time&&feature(t('입실 마감','Last admission')+' '+row.admission_deadline,'attention'),
+    row.status==='conditional'&&feature(t('조건부','Conditional')),
+    row.conflict&&feature(t('시간 충돌','Time overlap'),'attention'),
+    row.kind==='interview'&&!row.start_time&&feature(t('시작 시각 미정','Start time TBD')),
+    fitBadge(row.posting_id)
+  ]);
+}
 const showDate = row=>[
   row.start_date ?? t('날짜 미정','Date TBD'),row.start_time,
   row.end_date || row.end_time ? '–' : null,row.end_date,row.end_time
@@ -139,6 +167,7 @@ async function jobDetail(row) {
     [t('이전 회차','Previous posting'),row.previous_id?jobTitle(posting(row.previous_id)):null]
   ];
   openPanel(row.title,t,h('div',{class:'stack'},
+    postingFeatures(row),
     h('dl',{},information.map(([key,val])=>[h('dt',{class:'muted'},key),h('dd',{},valueText(val))])),
     h('section',{},h('h3',{},t('지원 요건','Qualifications')),
       metadata.requirements.length ? h('ul',{},metadata.requirements.map(item=>h('li',{},(item.kind==='required'?t('필수','Required'):t('우대','Preferred'))+' · '+item.criterion))) : h('p',{class:'muted'},empty())),
@@ -192,11 +221,14 @@ function overview() {
     ['approaching',t('7일 내 마감','Deadlines in 7 days')]
   ];
   const next=data.schedules.find(row=>row.bucket==='active');
-  const focus = (title,ids)=>card(title,ids.length ? h('ul',{class:'summary-list'},ids.slice(0,8).map(id=>h('li',{},button(jobTitle(posting(id)),()=>showPosting(id))))) : h('p',{class:'muted'},empty()));
+  const focus = (title,ids)=>card(title,ids.length ? h('ul',{class:'summary-list'},ids.slice(0,8).map(id=>{
+    const row=posting(id);
+    return h('li',{class:'feature-row'},button(jobTitle(row),()=>showPosting(id)),featureTags([fitBadge(id)]));
+  })) : h('p',{class:'muted'},empty()));
   return [heading('overview',button(t('일정표 보기','Open schedule'),()=>navigate('schedule'),{class:'primary'})),
     h('div',{class:'stack'},
       h('div',{class:'grid'},metrics.map(([key,label])=>h('div',{class:'card'},h('span',{class:'muted'},label),h('strong',{class:'metric'},data.metrics[key])))),
-      h('div',{class:'grid'},card(t('다음 일정','Next event'),next ? button(showDate(next)+' · '+next.title,()=>editSchedule(next)) : h('p',{class:'muted'},empty())),
+      h('div',{class:'grid'},card(t('다음 일정','Next event'),next ? h('div',{class:'feature-row'},button(showDate(next)+' · '+next.title,()=>editSchedule(next)),scheduleFeatures(next)) : h('p',{class:'muted'},empty())),
         card(t('데이터 신선도','Data freshness'),h('p',{},t('최근 공식 확인','Last source check')+' · '+valueText(data.metrics.verified)),
           h('p',{},t('최근 스캔','Last scan')+' · '+valueText(data.metrics.scans)))),
       h('div',{class:'grid'},focus(t('추천 대표 공고','Recommended postings'),data.postings.filter(row=>analysisFor(row.id)?.representative).map(row=>row.id)),
@@ -242,14 +274,14 @@ function jobList(unreviewedOnly=false) {
       chosen(t('정렬','Sort'),'sort',[['deadline',t('마감일순','Deadline')],['company',t('기업명순','Company')],['updated',t('최근 수정순','Recently updated')],
         ['fit',t('적합도순','Fit score')]],false),
       button(t('필터 저장','Save filters'),()=>{preferences.set('jobFilter',filter);report(t('필터를 저장했습니다.','Filters saved.'));})),
-    table([t('비교','Compare'),t('기업·직무','Company and role'),fitTitle(),t('마감','Deadline'),t('지역','Location'),t('공고','Posting'),t('검토','Review'),t('전형','Stage')],
+    table([t('비교','Compare'),t('기업·직무','Company and role'),fitTitle(),t('마감','Deadline'),t('지역','Location'),t('공고','Posting'),t('검토','Review'),t('전형','Stage'),t('특징','Highlights')],
       visible.map(row=>[h('input',{type:'checkbox',checked:state.selected.has(row.id),'aria-label':jobTitle(row)+' '+t('비교 선택','select for comparison'),
         onchange:event=>{
           if (event.target.checked && state.selected.size>=5) { event.target.checked=false; report(t('최대 5개까지 선택할 수 있습니다.','Select up to five postings.'),true);return; }
           if (event.target.checked) state.selected.add(row.id); else state.selected.delete(row.id);
           $('compare-count').textContent=String(state.selected.size);
         }}),button(jobTitle(row),()=>showPosting(row.id)),fitLabel(analysisFor(row.id)),valueText(row.deadline_date),valueText(row.location),
-        pill(translated(row.posting_status)),translated(row.review_status),translated(application(row.id)?.stage ?? 'not_submitted')]),titleFor(state.page),empty()),
+        pill(translated(row.posting_status)),translated(row.review_status),translated(application(row.id)?.stage ?? 'not_submitted'),postingFeatures(row)]),titleFor(state.page),empty()),
     h('div',{class:'pager'},h('div',{class:'actions'},button(t('이전','Previous'),()=>{state.pageNumber--;render();},{disabled:state.pageNumber===0}),
       h('span',{},(state.pageNumber+1)+' / '+(last+1)),button(t('다음','Next'),()=>{state.pageNumber++;render();},{disabled:state.pageNumber===last})),
       button('',()=>navigate('compare'),{id:'compare-button'})),
@@ -257,11 +289,11 @@ function jobList(unreviewedOnly=false) {
 }
 function appList() {
   return [heading('applications'),
-    table([t('기업·직무','Company and role'),fitTitle(),t('지원 의사','Intent'),t('실제 전형','Actual stage'),t('제출 시각','Submitted at'),t('관리','Manage')],
+    table([t('기업·직무','Company and role'),fitTitle(),t('지원 의사','Intent'),t('실제 전형','Actual stage'),t('제출 시각','Submitted at'),t('관리','Manage'),t('특징','Highlights')],
       state.data.postings.filter(filterJob).map(row=>{
         const app=application(row.id);
         return [button(jobTitle(row),()=>showPosting(row.id)),fitLabel(analysisFor(row.id)),app?.intent==='planned'?t('A 일반','Planned, primary'):translated(app?.intent ?? 'undecided'),
-          translated(app?.stage ?? 'not_submitted'),valueText(app?.submitted_at),button(t('상태 수정','Edit status'),()=>editApplication(row))];
+          translated(app?.stage ?? 'not_submitted'),valueText(app?.submitted_at),button(t('상태 수정','Edit status'),()=>editApplication(row)),postingFeatures(row)];
       }),titleFor('applications'),empty())];
 }
 function scheduleRows() {
@@ -297,12 +329,13 @@ function calendar(rows) {
         h('strong',{'aria-label':date},String(i+1)),items.map(row=>button(row.title,()=>editSchedule(row))));
     }));
 }
-function scheduleStatus(row) {
-  return [translated(row.status==='planned'?row.certainty:row.status),row.conflict?t('시간 충돌','Time overlap'):null].filter(Boolean).join(' · ');
+function scheduleStatus(row,includeConflict=true) {
+  return [translated(row.status==='planned'?row.certainty:row.status),includeConflict&&row.conflict?t('시간 충돌','Time overlap'):null].filter(Boolean).join(' · ');
 }
-function scheduleNotes(row) {
+function scheduleNotes(row,includeTimes=true) {
   const predecessor=state.data.schedules.find(item=>item.id===row.predecessor_id);
-  return [row.location,row.arrival_time?t('도착 ','Arrive ')+row.arrival_time:null,row.admission_deadline?t('입실 마감 ','Last admission ')+row.admission_deadline:null,
+  return [row.location,includeTimes&&row.arrival_time?t('도착 ','Arrive ')+row.arrival_time:null,
+    includeTimes&&row.admission_deadline?t('입실 마감 ','Last admission ')+row.admission_deadline:null,
     row.preparation,row.condition_note,predecessor?t('선행 일정 ','After ')+predecessor.title:null,row.notes].filter(Boolean).join(' · ');
 }
 function schedule() {
@@ -313,6 +346,7 @@ function schedule() {
   const raw=rows.map(row=>[showDate(row),jobTitle(posting(row.posting_id)),translated(row.kind)+' · '+row.title,scheduleStatus(row),scheduleNotes(row)]);
   const exportRows=rows.filter(row=>!row.excluded);
   const exportData=raw.filter((_,index)=>!rows[index].excluded);
+  const showNotes=preferences.get('notesColumn',true);
   return [heading('schedule',button(t('일정 추가','Add event'),()=>editSchedule(),{class:'primary'})),
     h('div',{class:'toolbar'},[['active',t('활성 일정','Active')],['undated',t('날짜 미정','Undated')],
       ['history',t('완료·과거','History')],['excluded',t('활성 제외','Inactive')]].map(([key,label])=>button(label,()=>{state.bucket=key;render();},{'aria-pressed':state.bucket===key,class:state.bucket===key?'primary':''}))),
@@ -325,9 +359,12 @@ function schedule() {
     filter.range==='month' && state.bucket!=='undated' ? h('div',{class:'stack'},
       h('div',{class:'toolbar'},button(t('지난 달','Previous month'),()=>{state.month=monthAfter(state.month,-1);render();}),h('strong',{},state.month),
         button(t('다음 달','Next month'),()=>{state.month=monthAfter(state.month,1);render();})),calendar(rows)) : null,
-    table(headers.filter((_,i)=>i!==4 || preferences.get('notesColumn',true)),
-      raw.map((values,i)=>[values[0],h('div',{class:'stack'},values[1],fitBadge(rows[i].posting_id)),button(values[2],()=>editSchedule(rows[i])),pill(values[3]),
-        ...(preferences.get('notesColumn',true)?[valueText(values[4])]:[])]),titleFor('schedule'),empty()),
+    table(headers.filter((_,i)=>i!==4 || showNotes),
+      raw.map((values,i)=>{
+        const row=rows[i],tags=scheduleFeatures(row),status=pill(scheduleStatus(row,false));
+        return [values[0],values[1],button(values[2],()=>editSchedule(row)),showNotes?status:h('div',{class:'feature-row'},status,tags),
+          ...(showNotes?[h('div',{class:'feature-row'},scheduleNotes(row,false),tags)]:[])];
+      }),titleFor('schedule'),empty()),
     h('div',{class:'pager'},h('div',{class:'actions'},
       button(t('Markdown 복사','Copy Markdown'),()=>safe(async()=>{await navigator.clipboard.writeText(markdown(headers,exportData));report(t('복사했습니다.','Copied.'));})),
       button('CSV',()=>download('careerops-schedule.csv',csv(headers,exportData),'text/csv')),
