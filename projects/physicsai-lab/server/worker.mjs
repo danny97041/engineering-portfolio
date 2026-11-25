@@ -4,6 +4,7 @@ import {bounded,fileLimit} from '../web/package.mjs';
 import {registryRecord,inspectManifest} from '../web/registry.mjs';
 import {compare} from '../web/search.mjs';
 import {createIndexCache} from './index-cache.mjs';
+import {mcp} from './mcp.mjs';
 
 const headers={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer',
   'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'"};
@@ -54,6 +55,12 @@ async function route(request,env) {
   const signed=request.headers.get('oai-authenticated-user-id');
   const email=request.headers.get('oai-authenticated-user-email');
   const owner=Boolean(signed && email && env.LAB_OWNER_EMAIL && email.toLowerCase()===env.LAB_OWNER_EMAIL.toLowerCase());
+  if(path==='/mcp')return mcp(request,owner,json,{
+    catalog:async()=> (await catalogState(env)).catalog,
+    validation:async()=> validation??=await asset('/data/validation.json').json(),
+    field:async id=>asset('/data/fields/'+id+'.json')?.json(),
+    index:evidenceIndex
+  });
   if(!owner)return fail('Site owner sign-in required',403);
   const mutating=!['HEAD','GET'].includes(request.method);
   if(mutating && request.headers.get('origin')!==url.origin)return fail('Same-origin request required',403);
