@@ -6,6 +6,7 @@ import { transaction } from '../database/local.mjs';
 import { applications, changeApplication, workspace } from '../application/workspace.mjs';
 import { analysisIndex, ingestPosting, recordAssessment, reviewPosting } from '../application/analysis.mjs';
 import { fingerprint, preview, recordScan, scanHistory } from '../application/scans.mjs';
+import { records } from '../application/records.mjs';
 
 const id={type:'string',minLength:1,maxLength:128}, text={type:'string',minLength:1,maxLength:500};
 const version={type:'integer',minimum:1}, limit={type:'integer',minimum:1,maximum:30};
@@ -56,7 +57,11 @@ register('compare_jobs','Compare two to five distinct posting IDs and their evid
   check(new Set(p.ids).size===p.ids.length,'Expected distinct posting IDs');
   return {items:p.ids.map(id=>readJob(s,a,id))};
 });
-register('get_interview_context','Read one application and its interview preparations.',{id},['id'],(s,a,p)=>({application:applications(s,a,p.id),preparations:s.db.prepare('SELECT id,notes,updated_at FROM interview_preparations WHERE application_id=? ORDER BY updated_at DESC LIMIT 10').all(p.id)}));
+register('get_interview_context','Read one application and its interview preparations.',{id},['id'],(s,a,p)=>{
+  const application=applications(s,a,p.id);
+  return {application,preparations:s.db.prepare('SELECT id,notes,updated_at FROM interview_preparations WHERE application_id=? ORDER BY updated_at DESC LIMIT 10').all(p.id),
+    records:records(s,a,{postingId:application.posting_id,limit:10})};
+});
 register('analytics','Compute descriptive workspace statistics.',{},[],(s,a)=>analysisIndex(s,a).stats);
 function changes(s,a,{after=0,limit=15}) {
   const items=s.db.prepare('SELECT seq,entity,record_id,actor,correlation_id,changed_at FROM change_logs WHERE seq>? ORDER BY seq LIMIT ?').all(after,limit);

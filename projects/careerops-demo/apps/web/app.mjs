@@ -3,6 +3,7 @@ import { applicationFields, companyFields, labelFor, openForm, openPanel, option
 import { csv, ics, markdown } from './exports.mjs';
 import { addDays } from './workflow.mjs';
 import { analysisLabel, analytics, jsonEditor, reviewPanel, showIntake } from './analysis.mjs';
+import { commandsPanel, exchangePanel, recordsPanel } from './advanced.mjs';
 
 const preferences = {
   get(key,fallback) { try { return JSON.parse(localStorage.getItem('careerops.'+key)) ?? fallback; } catch { return fallback; } },
@@ -11,6 +12,7 @@ const preferences = {
 const pages = {overview:['개요','Overview'],schedule:['일정표','Schedule'],jobs:['공고 탐색','Job Explorer'],
   applications:['지원 현황','Applications'],unreviewed:['미분석 공고','Unreviewed Jobs'],
   assessments:['채용 분석','Assessments'],compare:['기업 비교','Compare'],analytics:['통계','Analytics'],
+  records:['면접·문서','Interviews & Documents'],commands:['명령 팔레트','Command Palette'],exchange:['데이터 교환','Data Exchange'],
   activity:['변경 이력','Activity Log'],settings:['설정','Settings'],engineering:['기술 정보','Engineering']};
 const state = {
   language:preferences.get('language','ko'),theme:preferences.get('theme','light'),page:preferences.get('home','overview'),
@@ -440,6 +442,9 @@ function engineering() {
     h('p',{},t('일정표 시간대 · Asia/Seoul','Schedule time zone · Asia/Seoul')))];
 }
 const renderers={overview,schedule,jobs:()=>jobList(),unreviewed:()=>jobList(true),applications:appList,compare,activity,settings,engineering,
+  records:()=>[heading('records'),recordsPanel({api,t,safe,data:state.data})],
+  commands:()=>[heading('commands'),commandsPanel({api,t,safe,load})],
+  exchange:()=>[heading('exchange'),exchangePanel({api,t,safe,load})],
   assessments,analytics:()=>[heading('analytics'),analytics(state.analysis.stats,t)]};
 
 function render() {

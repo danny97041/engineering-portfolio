@@ -4,6 +4,7 @@ import { MAX_BODY, createHandler } from '../../packages/api/http.mjs';
 import { CareerService } from '../../packages/application/service.mjs';
 
 const assets = {
+  '/assets/advanced.mjs':['text/javascript','../../apps/web/advanced.mjs'],
   '/':['text/html','../../apps/web/index.html'],
   '/assets/styles.css':['text/css','../../apps/web/styles.css'],
   '/assets/app.mjs':['text/javascript','../../apps/web/app.mjs'],

@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { gateway } from './gateway.mjs';
+import { advanced } from './advanced.mjs';
 import { ApiError, check, object } from '../domain/contracts.mjs';
 import { applications, changeApplication, previewEdits, undoEdit, workspace } from '../application/workspace.mjs';
 import { analysisIndex, ingestPosting, intakeQueue, recordAssessment, reviewPosting, setExclusion, updateFacts, updateWeights } from '../application/analysis.mjs';
@@ -30,6 +31,8 @@ export function createHandler(service, realm, stage, ownerKey, readerKey) {
       const actor = timingSafeEqual(key,owner) ? 'owner' : reader && timingSafeEqual(key,reader) ? 'reader' : null;
       check(actor,'Invalid credential',401);
       const url = new URL(request.url);
+      const advancedResponse=await advanced(service,actor,request,url,json,jsonBody);
+      if (advancedResponse) return advancedResponse;
       const response=await gateway(service,actor,request,url,json,jsonBody);
       if (response) return response;
       check(!url.search, 'Unknown query parameter',400);

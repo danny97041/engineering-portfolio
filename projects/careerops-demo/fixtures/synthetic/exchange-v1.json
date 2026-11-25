@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "key": "synthetic-01",
+  "items": [
+    {
+      "ref": "company",
+      "type": "companies",
+      "data": {
+        "name": "Synthetic Prism Research"
+      }
+    },
+    {
+      "ref": "posting",
+      "type": "job_postings",
+      "data": {
+        "company_id": {
+          "$ref": "company"
+        },
+        "title": "Synthetic research engineer",
+        "round_key": "sample-1",
+        "role_code": "thermal"
+      }
+    },
+    {
+      "ref": "study",
+      "type": "career_records",
+      "data": {
+        "kind": "study",
+        "data": {
+          "title": "Synthetic CFD notes",
+          "topic": "Mesh refinement",
+          "completed": false
+        }
+      }
+    },
+    {
+      "ref": "interview",
+      "type": "career_records",
+      "data": {
+        "kind": "interview",
+        "postingId": {
+          "$ref": "posting"
+        },
+        "data": {
+          "title": "Synthetic technical interview",
+          "studyIds": [
+            {
+              "$ref": "study"
+            }
+          ],
+          "format": "Panel"
+        }
+      }
+    }
+  ]
+}
