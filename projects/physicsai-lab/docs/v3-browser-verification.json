@@ -1,0 +1,12 @@
+{
+  "engine": "157.0.8103.79",
+  "models": 65,
+  "points": 2340,
+  "outputs": 3420,
+  "maximum": 0.0000011920928955078125,
+  "failed": [],
+  "navigation": 18,
+  "invalidCoordinate": true,
+  "animation": true,
+  "mobile": true
+}

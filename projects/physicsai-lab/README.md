@@ -21,3 +21,7 @@ python scripts/smoke_v3.py /path/to/clean-v3.0.4 /path/to/V3_Results.zip --all
 ```
 
 The checkpoint publishes the audit code and verification summaries. Upstream weights, archives and notebook source are available at their original release.
+
+## Research workspace
+
+[Research results for 65 runs](results/README.md) · [Numerical contract](docs/PHASE_10_CONTRACT.md) · [Browser implementation and reproduction](docs/PHASE_11.md)
