@@ -83,3 +83,4 @@ The 46 automated tests cover eligibility, evidence, intake idempotency, permissi
 [Gateway contract and synthetic import example](docs/GATEWAY.md)
 
 [Release tests](docs/TEST_REPORT.md) · [Benchmark](docs/BENCHMARK_REPORT.md) · [Architecture case study](docs/PORTFOLIO_CASE_STUDY.md) · [MCP tools](docs/MCP_TOOLS.md)
+[Work migration contract](docs/DATA_IMPORT_GUIDE.md)
