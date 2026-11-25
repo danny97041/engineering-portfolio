@@ -1,9 +1,11 @@
-import { check, object, string, ApiError } from '../domain/contracts.mjs';
+import { check, object, string, ApiError, resources } from '../domain/contracts.mjs';
 import { transaction } from '../database/local.mjs';
 import { fingerprint, preview } from './scans.mjs';
 import { applications, changeApplication, workspace } from './workspace.mjs';
 import { recordAssessment, setExclusion, updateFacts, reviewPosting } from './analysis.mjs';
 import { writeRecord } from './records.mjs';
+import { randomUUID } from 'node:crypto';
+import { intents, stages, seoulDate } from '../domain/workflow.mjs';
 
 export const operations=['companies','job_postings','schedules','applications','profile','rules','exclusions','analysis_facts','assessments','career_records'];
 function rule(service,actor,{code,version,definition,active}){
@@ -17,6 +19,37 @@ function rule(service,actor,{code,version,definition,active}){
   service.audit(actor,'rules',id,null,{code,version,definition,active});
   return {id};
 }
+function historicalApplication(service,actor,id,version,data){
+  const {history,stage,intent,posting_id}=data;
+  object(history);
+  check(Object.keys(data).every(k=>['history','stage','intent','posting_id'].includes(k)) &&
+    Object.keys(history).every(k=>['source','submittedOn'].includes(k)),'Unknown historical application field');
+  const source=string(history.source,500);
+  const before=id?applications(service,actor,id):null;
+  if(before) check(before.version===version && (!posting_id || posting_id===before.posting_id),'Historical target changed',409);
+  const posting=service.read(actor,'job_postings',string(before?.posting_id??posting_id));
+  const nextIntent=intent??before?.intent??'undecided';
+  check(stages.includes(stage)&&intents.includes(nextIntent),'Invalid historical application state');
+  const date=Object.hasOwn(history,'submittedOn')?history.submittedOn:before?.submitted_at??null;
+  if(history.submittedOn!=null){
+    resources.schedules.fields.start_date(history.submittedOn);
+    check(history.submittedOn<=seoulDate(),'Historical submission is in the future');
+  }
+  check(stage!=='not_submitted'||date===null,'Submission date conflicts with historical stage');
+  const db=service.db;
+  if(!before){
+    check(!db.prepare("SELECT 1 FROM applications WHERE posting_id=? AND user_id='owner'").get(posting.id),'Application already exists',409);
+    id=randomUUID();
+    db.prepare("INSERT INTO applications(id,posting_id,user_id,intent,stage,submitted_at) VALUES (?,?,'owner',?,?,?)").run(id,posting.id,nextIntent,stage,date);
+  } else {
+    db.prepare('UPDATE applications SET intent=?,stage=?,submitted_at=?,version=version+1 WHERE id=?').run(nextIntent,stage,date,id);
+  }
+  db.prepare('INSERT INTO application_events(id,application_id,previous_stage,next_stage,occurred_at,source,previous_intent,next_intent) VALUES (?,?,?,?,?,?,?,?)')
+    .run(randomUUID(),id,before?.stage??null,stage,new Date().toISOString(),'import: '+source,before?.intent??null,nextIntent);
+  const after=applications(service,actor,id);
+  service.audit(actor,'applications',id,before,after);
+  return after;
+}
 function perform(service,actor,{type,id,version,data}){
   switch(type){
     case 'companies':case 'job_postings':case 'schedules':
@@ -26,7 +59,7 @@ function perform(service,actor,{type,id,version,data}){
         check(!names.some(r=>normalize(r.value)===normalize(data.name)),'Company already exists or matches an alias',409);
       }
       return service.mutate(actor,type,id,version,data);
-    case 'applications':return changeApplication(service,actor,id,version,data);
+    case 'applications':return Object.hasOwn(data,'history')?historicalApplication(service,actor,id,version,data):changeApplication(service,actor,id,version,data);
     case 'profile':return service.setProfile(actor,version,data);
     case 'rules':return rule(service,actor,data);
     case 'exclusions':return setExclusion(service,actor,data);

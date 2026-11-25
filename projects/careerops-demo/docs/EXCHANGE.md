@@ -15,6 +15,8 @@ Convert each CSV row to a JSON item using the column names and parse the data ce
 | assessments | Posting id and criterion components. Assessment uses the versions visible when that row is applied. |
 | career_records | On create use kind, postingId and data. On edit use row id, version and nested data. |
 
+For migration of an existing decision, provide an established stage and a history object containing source and submittedOn. Supply the actual YYYY-MM-DD or null when unknown. The event records the import time separately. A directly observed terminal stage can be imported without inventing intermediate events. Live submission commands stamp the time of the new action.
+
 Place parents before dependants and use a one-field object such as {"$ref":"company"} for a previous row ID. Preview runs the same validations under rollback. A dry-run ID is temporary. Apply returns successful rows, before/after evidence and rejected rows. Corrected records need a new key. A previously applied identical batch returns its recorded outcome.
 
 Full JSON is a private report of application tables. Changes JSON uses the nextAfter cursor. Data Exchange also produces a Markdown handover, CSV, ICS and clipboard output. Export and backup can contain private records. Binary document contents live at their referenced source. The application stores document metadata and HTTPS references.

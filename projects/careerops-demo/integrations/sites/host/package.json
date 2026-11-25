@@ -1,0 +1,1 @@
+{"name":"careerops-sites-build","private":true,"type":"module","dependencies":{"@noble/hashes":"1.8.0","esbuild":"0.25.12","sql.js":"1.14.1"},"pnpm":{"onlyBuiltDependencies":["esbuild"]}}

@@ -1,22 +1,11 @@
+import { transaction } from './transaction.mjs';
+export { transaction };
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 
 const migrations = new URL('./migrations/', import.meta.url);
-export function transaction(db, action) {
-  // Nested service calls participate in the caller's all-or-nothing transaction.
-  if (db.isTransaction) return action();
-  db.exec('BEGIN IMMEDIATE');
-  try {
-    const result = action();
-    db.exec('COMMIT');
-    return result;
-  } catch (error) {
-    db.exec('ROLLBACK');
-    throw error;
-  }
-}
 export function openStore(root, realm, stage) {
   if (!['personal','demo'].includes(realm) || !['development','operational'].includes(stage))
     throw Error('Unknown deployment binding');

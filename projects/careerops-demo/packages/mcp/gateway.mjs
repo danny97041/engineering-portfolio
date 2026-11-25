@@ -7,6 +7,7 @@ import { applications, changeApplication, workspace } from '../application/works
 import { analysisIndex, ingestPosting, recordAssessment, reviewPosting } from '../application/analysis.mjs';
 import { fingerprint, preview, recordScan, scanHistory } from '../application/scans.mjs';
 import { records } from '../application/records.mjs';
+import { importBatch } from '../application/exchange.mjs';
 
 const id={type:'string',minLength:1,maxLength:128}, text={type:'string',minLength:1,maxLength:500};
 const version={type:'integer',minimum:1}, limit={type:'integer',minimum:1,maximum:30};
@@ -39,8 +40,36 @@ const catalog={publicRead:true}, writing={write:true};
 const readJob=(s,a,id)=>({...s.read(a,'job_postings',id),...s.relations('job_postings',id)});
 register('search_jobs','Search posting titles, roles and rounds. Results are paginated.',{...page,query:text},[],(s,a,p)=>{
   const q=(p.query??'').toLocaleLowerCase();
-  return rows(s.read(a,'job_postings').filter(r=>[r.title,r.round_key,r.role_code].some(v=>v.toLocaleLowerCase().includes(q))),p);
+  const offset=p.offset??0,limit=p.limit??15,items=[];
+  let cursor='',skipped=0;
+  const fetchPage=s.db.prepare('SELECT id,title,round_key,role_code FROM job_postings WHERE deleted_at IS NULL AND id>? ORDER BY id LIMIT 128');
+  for(;;){
+    const batch=fetchPage.all(cursor);
+    for(const row of batch){
+      if(![row.title,row.round_key,row.role_code].some(v=>v.toLocaleLowerCase().includes(q))) continue;
+      if(skipped<offset){skipped++;continue;}
+      if(items.length===limit) return {items,nextOffset:offset+limit};
+      items.push(s.read(a,'job_postings',row.id));
+    }
+    if(batch.length<128) return {items,nextOffset:null};
+    cursor=batch.at(-1).id;
+  }
 },catalog);
+const exchange={schemaVersion:{type:'integer',const:1},items:{type:'array',minItems:1,maxItems:30,items:anyObject}};
+register('preview_work_batch','Preview a versioned Work exchange batch and return row decisions.',{...exchange,key:id},['schemaVersion','items','key'],(s,a,p)=>importBatch(s,a,p,true));
+register('apply_work_batch','Apply a reviewed Work batch and return the durable row receipts.',exchange,['schemaVersion','items'],(s,a,p)=>importBatch(s,a,p,false),writing);
+register('confirm_official_deadline','Confirm one sourced deadline change on an exact posting and its linked deadline event.',{
+  postingId:id,postingVersion:version,scheduleId:id,scheduleVersion:version,date:text,time:text,source:{type:'string',maxLength:2048},evidence:text,verifiedOn:text
+},['postingId','postingVersion','scheduleId','scheduleVersion','date','source','evidence','verifiedOn'],(s,a,p)=>{
+  const event=s.read(a,'schedules',p.scheduleId);
+  check(event.posting_id===p.postingId && event.kind==='deadline','Not the linked deadline event',409);
+  const sources=s.relations('job_postings',p.postingId).sources.filter(row=>row.url!==p.source)
+    .map(row=>Object.fromEntries(Object.entries(row).filter(([,value])=>value!==null)));
+  sources.push({url:p.source,verified_on:p.verifiedOn,evidence:p.evidence});
+  const posting=s.mutate(a,'job_postings',p.postingId,p.postingVersion,{deadline_date:p.date,deadline_time:p.time??null,sources});
+  const schedule=s.mutate(a,'schedules',p.scheduleId,p.scheduleVersion,{start_date:p.date,end_date:null,start_time:null,end_time:p.time??null,source_url:p.source,verified_on:p.verifiedOn,certainty:'confirmed'});
+  return {postingId:posting.id,postingVersion:posting.version,scheduleId:schedule.id,scheduleVersion:schedule.version};
+},writing);
 register('get_job_details','Read a single posting by exact ID and its source evidence.',{id},['id'],(s,a,p)=>readJob(s,a,p.id),catalog);
 register('get_dashboard','Return workspace counts and the reporting date.',{},[],(s,a)=>{const w=workspace(s,a);return {today:w.today,metrics:w.metrics};});
 register('get_schedule','Read a page of workspace schedules, with conflicts and status.',page,[],(s,a,p)=>rows(workspace(s,a).schedules,p));
