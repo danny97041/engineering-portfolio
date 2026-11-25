@@ -159,6 +159,18 @@ async function showAnalysis(row) {
   const review=await api('analysis/'+row.id);
   reviewPanel({job:row,t,api,load,review});
 }
+function analysisActions(row) {
+  const instruction=t(
+    '현재 연결한 CareerOps 작업공간의 get_job_details에서 공고 ID '+row.id+'를 조회해 공식 출처를 확인하고 자격 판정, 5종 적합도, 근거 및 미확인 사항을 정리해 줘. 결과는 먼저 검토용으로 보여 주고 저장은 별도 요청을 받으면 진행해.',
+    'Call get_job_details for posting ID '+row.id+' in the connected CareerOps workspace. Verify the official source and draft eligibility, the five fit dimensions, evidence and open questions. Present the draft for review and wait for a separate request before saving it.');
+  return h('div',{class:'actions'},
+    button(t('분석 시작','Start analysis'),()=>safe(()=>showAnalysis(row))),
+    button(t('Chat·Work 분석 요청 복사','Copy analysis request for Chat or Work'),()=>safe(async()=>{
+      await navigator.clipboard.writeText(instruction);
+      report(t('요청을 복사했습니다. 개인화의 GPT 대화 연결에서 Chat을 열거나 Work를 선택해 붙여 넣으세요.',
+        'Request copied. Open Chat from Personalization or switch to Work, then paste it.'));
+    })));
+}
 async function jobDetail(row) {
   const metadata=await details(row.id);
   const org=company(row.company_id);
@@ -283,14 +295,16 @@ function jobList(unreviewedOnly=false) {
       chosen(t('정렬','Sort'),'sort',[['deadline',t('마감일순','Deadline')],['company',t('기업명순','Company')],['updated',t('최근 수정순','Recently updated')],
         ['fit',t('적합도순','Fit score')]],false),
       button(t('필터 저장','Save filters'),()=>{preferences.set('jobFilter',filter);report(t('필터를 저장했습니다.','Filters saved.'));})),
-    table([t('비교','Compare'),t('기업·직무','Company and role'),fitTitle(),t('마감','Deadline'),t('지역','Location'),t('공고','Posting'),t('검토','Review'),t('전형','Stage'),t('특징','Highlights')],
+    table([t('비교','Compare'),t('기업·직무','Company and role'),fitTitle(),t('마감','Deadline'),t('지역','Location'),t('공고','Posting'),t('검토','Review'),t('전형','Stage'),
+      ...(unreviewedOnly&&!showClosed?[t('분석','Analysis')]:[]),t('특징','Highlights')],
       visible.map(row=>[h('input',{type:'checkbox',checked:state.selected.has(row.id),'aria-label':jobTitle(row)+' '+t('비교 선택','select for comparison'),
         onchange:event=>{
           if (event.target.checked && state.selected.size>=5) { event.target.checked=false; report(t('최대 5개까지 선택할 수 있습니다.','Select up to five postings.'),true);return; }
           if (event.target.checked) state.selected.add(row.id); else state.selected.delete(row.id);
           $('compare-count').textContent=String(state.selected.size);
         }}),button(jobTitle(row),()=>showPosting(row.id)),fitLabel(analysisFor(row.id)),valueText(row.deadline_date),valueText(row.location),
-        pill(showClosed?t('종료','Closed'):translated(row.posting_status)),translated(row.review_status),translated(application(row.id)?.stage ?? 'not_submitted'),postingFeatures(row)]),
+        pill(showClosed?t('종료','Closed'):translated(row.posting_status)),translated(row.review_status),translated(application(row.id)?.stage ?? 'not_submitted'),
+        ...(unreviewedOnly&&!showClosed?[analysisActions(row)]:[]),postingFeatures(row)]),
       showClosed?t('종료 공고','Closed postings'):titleFor(state.page),empty()),
     h('div',{class:'pager'},h('div',{class:'actions'},button(t('이전','Previous'),()=>{state.pageNumber--;render();},{disabled:state.pageNumber===0}),
       h('span',{},(state.pageNumber+1)+' / '+(last+1)),button(t('다음','Next'),()=>{state.pageNumber++;render();},{disabled:state.pageNumber===last})),

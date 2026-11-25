@@ -39,7 +39,12 @@ export function chatSettingsPanel({api,t,safe,report}){
       'Save the private conversation address from your browser. In ChatGPT, select the CareerOps app to access workspace tools permitted for your account.')),
     h('form',{class:'stack',onsubmit:event=>{event.preventDefault();update(input.value.trim()||null);}},
       h('label',{},t('비공개 GPT 대화 주소','Private GPT conversation URL'),input),
-      h('div',{class:'actions'},save,clear,link)),status);
+      h('div',{class:'actions'},save,clear,link)),status,
+    h('h3',{},t('Work에서 연결','Connect in Work')),
+    h('p',{},t('ChatGPT를 열어 Work를 선택한 뒤, 도구 선택기에서 현재 작업공간과 일치하는 CareerOps 앱을 연결하세요. 미분석 공고에서 복사한 요청을 새 Work 작업에 붙여 넣을 수 있습니다.',
+      'Open ChatGPT, switch to Work and connect the CareerOps app that matches your workspace. Paste a request copied from an unreviewed posting into a new Work task.')),
+    h('a',{href:'https://help.openai.com/en/articles/20001275-chatgpt-work-and-codex',target:'_blank',rel:'noopener noreferrer'},
+      t('Work 전환 위치 안내','Where to switch to Work')));
 }
 export function playgroundPanel({api,t,safe,load,data}){
   const output=h('pre',{role:'status'});

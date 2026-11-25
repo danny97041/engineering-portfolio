@@ -1,4 +1,5 @@
-import { chromium } from 'playwright-core';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 import { mkdtempSync,rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -8,6 +9,8 @@ import { openStore } from '../packages/database/local.mjs';
 import { startServer } from '../integrations/local/server.mjs';
 import { seedPortfolio } from '../fixtures/synthetic/portfolio.mjs';
 import { createSandboxReset } from '../integrations/local/sandbox.mjs';
+const require=createRequire(import.meta.url);
+const {chromium}=await import(pathToFileURL(process.env.CAREEROPS_PLAYWRIGHT??require.resolve('playwright-core')));
 const root=mkdtempSync(join(tmpdir(),'careerops-browser-')),db=openStore(root,'demo','development');
 let browser,server;
 try{
@@ -61,6 +64,14 @@ try{
   await nav('미분석 공고');
   await button('현재 공고',screen).click();
   assert.equal(await screen.getByRole('button',{name:/Synthetic past unreviewed/}).count(),0);
+  await button('분석 시작',screen).first().click();
+  const review=page.locator('dialog[open]');
+  await review.getByText(/자격/).first().waitFor();
+  await button('닫기',review).click();
+  await page.context().grantPermissions(['clipboard-read','clipboard-write']);
+  await button('Chat·Work 분석 요청 복사',screen).first().click();
+  await screen.getByRole('button',{name:'Chat·Work 분석 요청 복사',exact:true}).first().waitFor();
+  await page.waitForFunction(async()=> (await navigator.clipboard.readText()).includes('공고 ID'));
   await nav('공고 탐색');
   await screen.getByRole('columnheader',{name:'특징',exact:true}).waitFor();
   await screen.locator('td:last-child .feature-tags .pill').first().waitFor();
@@ -94,6 +105,7 @@ try{
   await page.locator('#global-search').fill('');
   console.log('PASS closed tab, inbox resolution, independent fit form');
   await nav('개인화');
+  await screen.getByRole('link',{name:'Work 전환 위치 안내'}).waitFor();
   const chat='https://chatgpt.com/c/synthetic-chat-id';
   const chatInput=screen.getByLabel('비공개 GPT 대화 주소');
   await chatInput.fill(chat);
