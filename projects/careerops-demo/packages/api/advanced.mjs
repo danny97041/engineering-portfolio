@@ -3,13 +3,21 @@ import { records, writeRecord } from '../application/records.mjs';
 import { command } from '../application/commands.mjs';
 import { exportData, importBatch } from '../application/exchange.mjs';
 import { chatPreference, saveChatPreference } from '../application/chat-preference.mjs';
+import { fitProfile, saveFitProfile } from '../application/fit-profile.mjs';
 
 export async function advanced(service,actor,request,url,json,jsonBody){
   const path=url.pathname,method=request.method;
   const match=/^\/api\/records(?:\/([\w-]+))?$/.exec(path);
+  const fit=/^\/api\/fit\/([\w-]{1,128})$/.exec(path);
   const known=['/api/commands','/api/exchange/preview','/api/exchange/import','/api/exchange/export','/api/personalization/chat'];
-  if(!match&&!known.includes(path)) return null;
+  if(!match&&!fit&&!known.includes(path)) return null;
   service.authorize(actor,true);
+  if(fit){
+    check(!url.search,'Unexpected query',400);
+    if(method==='GET') return json(200,{fit:fitProfile(service,actor,fit[1])});
+    check(method==='POST','Method not allowed',405);
+    return json(200,saveFitProfile(service,actor,fit[1],await jsonBody(request)));
+  }
   if(path==='/api/personalization/chat'){
     check(!url.search,'Unexpected query',400);
     if(method==='GET') return json(200,chatPreference(service,actor));

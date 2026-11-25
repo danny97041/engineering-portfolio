@@ -12,6 +12,8 @@ const root=mkdtempSync(join(tmpdir(),'careerops-browser-')),db=openStore(root,'d
 let browser,server;
 try{
   seedPortfolio(db);
+  db.exec(`UPDATE job_postings SET deadline_date='2020-01-01',title='Synthetic past unreviewed'
+    WHERE id=(SELECT id FROM job_postings WHERE review_status='unreviewed' LIMIT 1)`);
   db.exec(`UPDATE schedules SET arrival_time='12:15',admission_deadline='12:15' WHERE id=(
     SELECT id FROM schedules WHERE kind='interview' AND start_date IS NOT NULL LIMIT 1)`);
   const ownerKey='demo.development.'+randomBytes(32).toString('base64url');
@@ -52,8 +54,45 @@ try{
   await onRight.getByText('도착 마감 12:15',{exact:true}).waitFor();
   await onRight.getByText('조건부',{exact:true}).first().waitFor();
   await nav('공고 탐색');
+  await screen.getByLabel('모든 지역').selectOption('');
+  await button('종료 공고',screen).click();
+  await screen.getByRole('button',{name:/Synthetic past unreviewed/}).waitFor();
+  await screen.getByRole('cell',{name:'종료',exact:true}).first().waitFor();
+  await nav('미분석 공고');
+  await button('현재 공고',screen).click();
+  assert.equal(await screen.getByRole('button',{name:/Synthetic past unreviewed/}).count(),0);
+  await nav('공고 탐색');
   await screen.getByRole('columnheader',{name:'특징',exact:true}).waitFor();
   await screen.locator('td:last-child .feature-tags .pill').first().waitFor();
+  const base='http://127.0.0.1:'+server.address().port;
+  const intake=await fetch(base+'/api/v1/intake',{method:'POST',headers:{authorization:'Bearer '+ownerKey,'content-type':'application/json'},
+    body:JSON.stringify({key:'browser-inbox',company:'Synthetic unresolved organization',
+      posting:{title:'Synthetic inbox role',round_key:'inbox-browser',role_code:'simulation',sources:[{url:'https://example.invalid/synthetic-inbox'}]}})});
+  assert.equal(intake.status,200);
+  await button('검토함').click();
+  const inbox=page.locator('dialog[open]');
+  await button('근거 확인',inbox).click();
+  await inbox.getByLabel('대상 기업').selectOption({index:1});
+  await inbox.getByLabel('처리 근거').fill('Verified synthetic queue item');
+  await button('결정 저장',inbox).click();
+  await inbox.getByRole('cell',{name:'신규 승인',exact:true}).waitFor();
+  await button('닫기',inbox).click();
+  await page.locator('#global-search').fill('Synthetic inbox role');
+  await screen.getByRole('button',{name:/Synthetic inbox role/}).click();
+  await button('자격·적합도',inbox).click();
+  await button('5종 평가 저장',inbox).click();
+  await inbox.getByLabel('기준일',{exact:true}).fill('2020-05-01');
+  await inbox.getByLabel('저장·변경 이유').fill('Verified synthetic fit');
+  const overall=inbox.locator('fieldset').first();
+  await overall.getByLabel('하한 또는 단일 점수').fill('77');
+  await overall.getByLabel('상한').fill('85');
+  await overall.getByLabel('출처 URL').fill('https://example.invalid/synthetic-evaluation');
+  await overall.getByLabel('판단 근거').fill('Synthetic official description');
+  await button('평가 저장',inbox).click();
+  await inbox.getByText('77–85 / 100 · 잠정',{exact:true}).waitFor();
+  await button('닫기',inbox).click();
+  await page.locator('#global-search').fill('');
+  console.log('PASS closed tab, inbox resolution, independent fit form');
   await nav('개인화');
   const chat='https://chatgpt.com/c/synthetic-chat-id';
   const chatInput=screen.getByLabel('비공개 GPT 대화 주소');

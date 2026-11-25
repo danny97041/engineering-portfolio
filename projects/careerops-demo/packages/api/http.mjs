@@ -3,7 +3,7 @@ import { gateway } from './gateway.mjs';
 import { advanced } from './advanced.mjs';
 import { ApiError, check, object } from '../domain/contracts.mjs';
 import { applications, changeApplication, previewEdits, undoEdit, workspace } from '../application/workspace.mjs';
-import { analysisIndex, ingestPosting, intakeQueue, recordAssessment, reviewPosting, setExclusion, updateFacts, updateWeights } from '../application/analysis.mjs';
+import { analysisIndex, ingestPosting, intakeQueue, recordAssessment, resolveIntake, reviewPosting, setExclusion, updateFacts, updateWeights } from '../application/analysis.mjs';
 
 export const MAX_BODY = 16384;
 const digest = value => createHash('sha256').update(value).digest();
@@ -23,7 +23,7 @@ export function createHandler(service, realm, stage, ownerKey, readerKey, sandbo
   const owner = digest(ownerKey);
   const reader = readerKey && digest(readerKey);
   return async request => {
-    const json = (status, value) => Response.json(value,{status,headers:{'cache-control':'no-store','x-content-type-options':'nosniff'}});
+    const json = (status, value) => Response.json(value,{status,headers:{'cache-control':'private, no-store','x-content-type-options':'nosniff'}});
     try {
       const auth = request.headers.get('authorization');
       check(auth?.startsWith('Bearer '),'Authentication required',401);
@@ -51,6 +51,7 @@ export function createHandler(service, realm, stage, ownerKey, readerKey, sandbo
         service.authorize(actor,true);
         if (type==='analysis' && method==='GET') return json(200,id?reviewPosting(service,actor,id):analysisIndex(service,actor));
         if (type==='intake' && !id && method==='GET') return json(200,intakeQueue(service,actor));
+        if (type==='intake' && id && method==='POST') return json(200,resolveIntake(service,actor,id,await jsonBody(request)));
         if (type==='analysis_facts' && id && method==='PUT') return json(200,updateFacts(service,actor,id,await jsonBody(request)));
         if (type==='analysis_weights' && !id && method==='PUT') return json(200,updateWeights(service,actor,await jsonBody(request)));
         if (type==='assessments' && id && method==='POST') return json(200,recordAssessment(service,actor,id,await jsonBody(request)));

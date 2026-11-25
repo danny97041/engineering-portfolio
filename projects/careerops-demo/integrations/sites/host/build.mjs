@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { mkdtempSync,rmSync,readFileSync,writeFileSync } from 'node:fs';
+import { mkdtempSync,rmSync,readFileSync,readdirSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { join,resolve } from 'node:path';
@@ -15,6 +15,9 @@ try {
   const db=openStore(temp,realm,stage);
   try {if(realm==='demo') seedPortfolio(db);} finally {db.close();}
   const baseline=gzipSync(readFileSync(join(temp,realm,stage,'careerops.sqlite'))).toString('base64');
+  const migrationDir=join(root,'packages/database/migrations');
+  const migrations=readdirSync(migrationDir).filter(name=>/^\d{3}_.+\.sql$/.test(name)).sort()
+    .map(name=>[name,readFileSync(join(migrationDir,name),'utf8')]);
   const assets={};
   for(const name of ['index.html','styles.css','app.mjs','dom.mjs','forms.mjs','analysis.mjs','advanced.mjs','exports.mjs','workflow.mjs','contracts.mjs']){
     const domain=['workflow.mjs','contracts.mjs'].includes(name);
@@ -30,6 +33,6 @@ try {
       plugin.onResolve({filter:/^node:crypto$/},()=>({path:join(host,'crypto.mjs')}));
       plugin.onResolve({filter:/^(node:perf_hooks|node:fs|deployment-data)$/},args=>({path:args.path,namespace:'generated'}));
       plugin.onLoad({filter:/.*/,namespace:'generated'},args=>({contents:args.path==='node:fs'?'export default {};':args.path==='node:perf_hooks'?'export const performance=globalThis.performance;':
-        'export const realm='+JSON.stringify(realm)+',stage='+JSON.stringify(stage)+',assets='+JSON.stringify(assets)+',baseline='+JSON.stringify(baseline)+';'}));
+        'export const realm='+JSON.stringify(realm)+',stage='+JSON.stringify(stage)+',assets='+JSON.stringify(assets)+',baseline='+JSON.stringify(baseline)+',migrations='+JSON.stringify(migrations)+';'}));
     }}]});
 } finally {rmSync(temp,{recursive:true,force:true});}

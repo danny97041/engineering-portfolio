@@ -9,6 +9,8 @@ Authenticated GET /api/contract lists the REST gateway routes, matching MCP tool
 | POST /api/commands | Return a query result or a versioned preview to confirm |
 | POST /api/exchange/preview and /api/exchange/import | Validate and apply version 1 Work batches |
 | GET /api/exchange/export | mode full, handover or changes, optional sequence cursor after |
+| GET, POST /api/fit/{id} | Independent fit ratings. Writes include posting and evaluation versions and a receipt key. |
+| GET /api/v1/intake, POST /api/v1/intake/{id} | Read review evidence, approve a new posting, merge sources by exact identity, or dismiss. |
 | GET /api/sandbox, POST /api/sandbox | Inspect sandbox capability and reset an enabled demo |
 | GET /api/health | Hosted realm, stage and D1 availability |
 | GET /api/recovery and /api/recovery/download | Hosted per-user history or current SQLite download |

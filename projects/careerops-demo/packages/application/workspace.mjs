@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { scanHistory } from './scans.mjs';
 import { ApiError, check, fieldsFor, object, resources, string, versionNumber } from '../domain/contracts.mjs';
-import { addDays, applicationChange, applicationInactive, awaitingResult, overlappingSchedules, scheduleState, seoulDate } from '../domain/workflow.mjs';
+import { addDays, applicationChange, applicationInactive, awaitingResult, overlappingSchedules, postingLifecycle, scheduleState, seoulDate, seoulTimeOf } from '../domain/workflow.mjs';
 import { transaction } from '../database/local.mjs';
 
 export function applications(service,actor,id) {
@@ -95,7 +95,7 @@ export function previewEdits(service,actor,body) {
 export function workspace(service,actor) {
   service.authorize(actor,true);
   const db = service.db;
-  const today = seoulDate();
+  const now=new Date(),today=seoulDate(now),time=seoulTimeOf(now);
   const companies = service.read(actor,'companies');
   const postings = service.read(actor,'job_postings');
   const apps = applications(service,actor);
@@ -115,10 +115,11 @@ export function workspace(service,actor) {
   const upcoming = addDays(today,7);
   const near = postings.filter(row=>row.deadline_date >= today && row.deadline_date <= upcoming && !applicationInactive(byPosting.get(row.id)) && !blocked.has(row.id));
   const waiting = apps.filter(row=>awaitingResult(row) && !blocked.has(row.posting_id));
-  const reviews = postings.filter(row=>['new','unreviewed','needs_verification'].includes(row.review_status));
+  const closedPostings=new Set(postings.filter(row=>postingLifecycle(row,today,time)==='closed').map(row=>row.id));
+  const reviews = postings.filter(row=>!closedPostings.has(row.id)&&['new','unreviewed','needs_verification'].includes(row.review_status));
   const missingVerification = postings.filter(row=>!blocked.has(row.id) && !db.prepare('SELECT 1 FROM job_sources WHERE posting_id=? AND verified_on IS NOT NULL LIMIT 1').get(row.id));
   return {
-    today,companies,postings,applications:apps,scanHistory:scanHistory(service,{limit:8}),
+    today,companies,postings,closedPostingIds:[...closedPostings],applications:apps,scanHistory:scanHistory(service,{limit:8}),
     schedules:schedules.map(row=>({...row,conflict:conflicts.has(row.id)})),
     aliases:db.prepare('SELECT alias,company_id FROM company_aliases ORDER BY alias').all(),
     metrics:{

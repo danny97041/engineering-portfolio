@@ -1,8 +1,9 @@
 import { check, object, string } from './contracts.mjs';
+import { postingLifecycle } from './workflow.mjs';
 
 export const criteria = ['direct_fit','skills','research','competitiveness','career_value','conditions'];
 export const initialWeights = Object.freeze(Object.fromEntries(criteria.map((key,index)=>[key,[30,20,15,10,15,10][index]])));
-export const ruleVersion = '2026-11-20.1';
+export const ruleVersion = '2026-11-25.2';
 export const ruleKeys = ['experience','degree','major','license','language','coding','deadline','round','exclusion'];
 const suffixes = {'industrial_cfd':'1','physics_ai':'2','manufacturing_simulation':'3'};
 
@@ -66,16 +67,17 @@ function codingRule(facts) {
   return facts.type==='algorithm' ? ['FAIL','algorithm_test_confirmed',facts.evidence] : ['PASS','no_confirmed_algorithm_test',facts.evidence];
 }
 function deadlineRule(posting,today,seoulTime) {
-  if (['cancelled','closed'].includes(posting.posting_status)) return ['FAIL','posting_closed',posting.posting_status];
+  if (postingLifecycle(posting,today,seoulTime)==='closed') return ['FAIL','posting_closed',
+    ['cancelled','closed'].includes(posting.posting_status)?posting.posting_status:[posting.deadline_date,posting.deadline_time].filter(Boolean).join(' ')];
   if (!posting.deadline_date) return ['UNKNOWN','deadline_unverified',null];
-  if (posting.deadline_date<today || (posting.deadline_date===today && posting.deadline_time && posting.deadline_time<=seoulTime)) {
-    return ['FAIL','posting_closed',[posting.deadline_date,posting.deadline_time].filter(Boolean).join(' ')];
-  }
   if (posting.deadline_date===today && !posting.deadline_time) return ['UNKNOWN','closing_time_unverified',posting.deadline_date];
   return ['PASS','before_confirmed_deadline',posting.deadline_date];
 }
-export function assessRules({posting,application,exclusion,facts,profile,today,seoulTime}) {
-  const size=classifyCompany(facts.company);
+export function assessRules({posting,application,exclusion,facts,profile,today,seoulTime,institutionType}) {
+  const classify=classifyCompany(facts.company);
+  const size=['B','C','D'].includes(classify)?classify:null;
+  const institution= ['company','public','research'].includes(facts.company?.organization)?facts.company.organization:
+    ['public','research'].includes(classify)?classify:institutionType??null;
   const direct=facts.role?.direct === true && Object.hasOwn(suffixes,facts.role.track) && Boolean(facts.role.evidence);
   const userPlanned=['planned','secondary'].includes(application?.intent) && application.stage==='not_submitted';
   const alreadyApplied=application && (application.stage!=='not_submitted' || ['declined','withdrawn'].includes(application.intent));
@@ -89,13 +91,17 @@ export function assessRules({posting,application,exclusion,facts,profile,today,s
     const [status,reason,evidence]=rows[index];
     return {id,status,reason,evidence,version:ruleVersion};
   });
-  const eligibility=rules.some(item=>item.status==='FAIL')?'FAIL':rules.some(item=>item.status==='UNKNOWN')?'UNKNOWN':'PASS';
+  const qualifications=rules.slice(0,5);
+  const eligibility=qualifications.some(item=>item.status==='FAIL')?'FAIL':qualifications.some(item=>item.status==='UNKNOWN')?'UNKNOWN':'PASS';
+  const exclusionReasons=rules.slice(5).filter(item=>item.status==='FAIL').map(item=>item.reason);
   const roleFit=(direct || facts.role?.fit===true) && Boolean(facts.role?.evidence);
   const sizeAllowed=size==='B' || size==='C' || (size==='D' && direct);
-  const recommendation=eligibility==='FAIL'?'excluded':eligibility==='UNKNOWN'?'review':
-    userPlanned?'user_planned':sizeAllowed && roleFit?'candidate':'review';
+  const recommendation=exclusionReasons.length || eligibility==='FAIL'?'excluded':
+    eligibility==='UNKNOWN'||rows.slice(5,7).some(([status])=>status==='UNKNOWN')?'review':
+    userPlanned?'user_planned':(sizeAllowed||['research','public'].includes(institution)) && roleFit?'candidate':'review';
   const sizeLabel = size && /^[BCD]$/.test(size) && direct ? size+'-'+suffixes[facts.role.track] : size;
-  return {eligibility,recommendation,size,sizeLabel,userGrade:userPlanned?'A':null,rules};
+  return {eligibility,recommendation,exclusionReasons,applicationStage:application?.stage??null,institution,size,sizeLabel,
+    postingLifecycle:postingLifecycle(posting,today,seoulTime),userGrade:userPlanned?'A':null,rules};
 }
 
 export const normalizeText = text=>String(text ?? '').normalize('NFKC').trim().toLocaleLowerCase('en').replace(/\s+/g,' ');

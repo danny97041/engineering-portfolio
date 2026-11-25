@@ -8,6 +8,7 @@ import { analysisIndex, ingestPosting, recordAssessment, reviewPosting } from '.
 import { fingerprint, preview, recordScan, scanHistory } from '../application/scans.mjs';
 import { records } from '../application/records.mjs';
 import { importBatch } from '../application/exchange.mjs';
+import { fitProfile, saveFitProfile } from '../application/fit-profile.mjs';
 
 const id={type:'string',minLength:1,maxLength:128}, text={type:'string',minLength:1,maxLength:500};
 const version={type:'integer',minimum:1}, limit={type:'integer',minimum:1,maximum:30};
@@ -91,7 +92,10 @@ register('check_schedule_conflicts','List active schedule conflicts on the store
 register('get_applications','Read a page of application decisions and submission stages.',page,[],(s,a,p)=>rows(applications(s,a),p));
 register('get_user_profile','Read the current owner qualification profile.',{},[],(s,a)=>s.profile(a));
 register('get_recruitment_rules','List the active built-in eligibility rule identifiers.',{},[],()=>({version:ruleVersion,rules:ruleKeys}));
-register('get_unreviewed_jobs','List postings awaiting review.',page,[],(s,a,p)=>rows(s.read(a,'job_postings').filter(r=>['new','unreviewed','needs_verification'].includes(r.review_status)),p));
+register('get_unreviewed_jobs','List current postings awaiting review. Closed postings remain in the catalog.',page,[],(s,a,p)=>{
+  const w=workspace(s,a),closed=new Set(w.closedPostingIds);
+  return rows(w.postings.filter(r=>!closed.has(r.id)&&['new','unreviewed','needs_verification'].includes(r.review_status)),p);
+});
 register('get_assessment','Read latest saved assessment for an exact posting.',{id},['id'],(s,a,p)=>({assessment:reviewPosting(s,a,p.id).assessment}));
 register('list_assessments','Read a page of saved assessment metadata.',page,[],(s,a,p)=>({items:s.db.prepare('SELECT id,posting_id,evaluation_version,assessed_at FROM assessments ORDER BY assessed_at DESC,id LIMIT ? OFFSET ?').all(p.limit??15,p.offset??0)}));
 register('evaluate_eligibility','Evaluate the current rules against stored posting evidence.',{id},['id'],(s,a,p)=>reviewPosting(s,a,p.id));
@@ -121,12 +125,13 @@ register('validate_import','Dry-run a scan batch and return its item outcomes.',
   const receipt=recordScan(s,a,{...p,key:randomUUID()});
   return {status:receipt.status,counts:receipt.counts,error:receipt.last_error};
 }));
-for (const name of ['import_job_batch','record_scan_run']) register(name,'Receive a bounded discovery batch. Replay the same key and items for retry.',batch,['items'],recordScan,writing);
+for (const name of ['import_job_batch','record_scan_run']) register(name,'Receive a bounded discovery batch. Replay the same key, source and items for retry.',
+  {...batch,origin:{type:'string',enum:['manual','scheduled','unverified']}},['items'],recordScan,writing);
 register('retry_scan_run','Retry one failed run using its stored payload, up to three total attempts.',{id},['id'],(s,a,p)=>{
-  const row=s.db.prepare('SELECT status,idempotency_key,request_json FROM scan_runs WHERE id=?').get(p.id);
+  const row=s.db.prepare('SELECT status,idempotency_key,request_json,origin FROM scan_runs WHERE id=?').get(p.id);
   check(row,'Run not found',404);
   check(row.status==='failed' && row.request_json,'Expected a failed reprocessable run',409);
-  return recordScan(s,a,{key:row.idempotency_key,items:JSON.parse(row.request_json)});
+  return recordScan(s,a,{key:row.idempotency_key,items:JSON.parse(row.request_json),origin:row.origin});
 },writing);
 for (const [name,type,edit] of [['add_job','job_postings',false],['update_job','job_postings',true],['add_schedule','schedules',false],['update_schedule','schedules',true]]) {
   register(name,edit?'Edit one exact record at its observed version.':'Create one validated record.',edit?{id,version,data:entity(type)}:{data:entity(type,true)},edit?['id','version','data']:['data'],(s,a,p)=>s.mutate(a,type,p.id,p.version,p.data),writing);
@@ -135,6 +140,10 @@ for (const [name,edit] of [['add_application',false],['update_application_status
   register(name,'Save one explicit application decision. Submission requires confirmation.',edit?{id,version,data:application}:{data:application},edit?['id','version','data']:['data'],(s,a,p)=>changeApplication(s,a,p.id,p.version,p.data),writing);
 }
 register('save_assessment','Save an assessment at its observed input versions.',{id,data:paramsSchema({versions:anyObject,components:anyObject},['versions','components'])},['id','data'],(s,a,p)=>recordAssessment(s,a,p.id,p.data),writing);
+register('get_fit_profile','Read five independent fit dimensions for an exact posting.',{id},['id'],(s,a,p)=>({fit:fitProfile(s,a,p.id)}));
+register('save_fit_profile','Save a versioned research and career fit evaluation for an exact posting.',
+  {id,version:{type:'integer',minimum:0},postingVersion:version,asOf:text,reason:text,scores:anyObject},
+  ['id','version','postingVersion','asOf','reason','scores'],(s,a,{id,...body})=>saveFitProfile(s,a,id,body),writing);
 register('save_interview_feedback','Append feedback to one existing interview question.',{id,feedback:text},['id','feedback'],(s,a,p)=>{
   check(s.db.prepare('SELECT id FROM interview_questions WHERE id=?').get(p.id),'Question not found',404);
   const receipt={id:randomUUID(),question_id:p.id};

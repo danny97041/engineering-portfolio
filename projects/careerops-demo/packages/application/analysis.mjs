@@ -2,7 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { check, object, string, fieldsFor, resources } from '../domain/contracts.mjs';
 import { assessRules, evaluateFit, identifyPosting, initialWeights, normalizeSource, normalizeText, ruleKeys, ruleVersion, weightsOf } from '../domain/analysis.mjs';
-import { seoulDate } from '../domain/workflow.mjs';
+import { seoulDate, seoulTimeOf } from '../domain/workflow.mjs';
+import { fitProfile } from './fit-profile.mjs';
 import { transaction } from '../database/local.mjs';
 
 const iso = ()=>new Date().toISOString();
@@ -111,10 +112,11 @@ function contextFor(service,actor,id) {
   const config=settings(db);
   const revisions={postingVersion:posting.version,factVersion:facts.version,weightVersion:config.version,profileVersion:profile.version};
   const clock=new Date();
-  const seoulTime=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(clock);
+  const seoulTime=seoulTimeOf(clock);
+  const institutionType=service.read(actor,'companies',posting.company_id).institution_type;
   const factsStale=Boolean(facts.version && facts.postingVersion!==posting.version);
   return {posting,application:app,exclusion,profile:profile.details,facts:factsStale?{}:facts.details,
-    inputFacts:facts.details,factsStale,today:seoulDate(clock),seoulTime,config,revisions};
+    inputFacts:facts.details,factsStale,today:seoulDate(clock),seoulTime,config,revisions,institutionType};
 }
 
 function evaluateReview(service,actor,id,explicit) {
@@ -124,7 +126,7 @@ function evaluateReview(service,actor,id,explicit) {
   const {posting,application,exclusion,inputFacts,factsStale,today,seoulTime,config,revisions}=context;
   // Time only affects the result at the next deadline boundary.
   const deadlinePassed=posting.deadline_date===today && Boolean(posting.deadline_time && posting.deadline_time<=seoulTime);
-  const fingerprint=hash({id,revisions,application:application?.version,exclusion:exclusion?.id,today,deadlinePassed,ruleVersion});
+  const fingerprint=hash({id,revisions,application:application?.version,exclusion:exclusion?.id,today,deadlinePassed,ruleVersion,institution:context.institutionType});
   const cache=db.prepare('SELECT input_hash,value_json FROM analysis_cache WHERE posting_id=?').get(id);
   const material=cache?.input_hash===fingerprint ? fromJson(cache.value_json) : assessRules(context);
   if (explicit) {
@@ -136,7 +138,7 @@ function evaluateReview(service,actor,id,explicit) {
     storeMetric(db,'rule_review_latency',performance.now()-started,'ms');
   }
   return {...material,versions:revisions,ruleVersion,companyExcluded:Boolean(exclusion),facts:inputFacts,factsStale,config,
-    assessment:recentAssessment(db,id,revisions)};
+    assessment:recentAssessment(db,id,revisions),fit:fitProfile(service,actor,id,posting.version)};
 }
 export function reviewPosting(service,actor,id) {
   service.authorize(actor,true);
@@ -186,7 +188,10 @@ export function analysisIndex(service,actor) {
     const representative=row.recommendation==='candidate' && !candidateByCompany.has(posting.company_id);
     if (representative) candidateByCompany.add(posting.company_id);
     result[posting.id]={eligibility:row.eligibility,recommendation:row.recommendation,representative,excluded:row.companyExcluded,
-      size:row.size,sizeLabel:row.sizeLabel,userGrade:row.userGrade,score:row.assessment?.score ?? null,
+      size:row.size,sizeLabel:row.sizeLabel,institution:row.institution,userGrade:row.userGrade,
+      exclusionReasons:row.exclusionReasons,applicationStage:row.applicationStage,score:row.assessment?.score ?? null,
+      fit:row.fit?{version:row.fit.version,stale:row.fit.stale,scores:Object.fromEntries(Object.entries(row.fit.scores).map(([key,part])=>
+        [key,part?{min:part.min,max:part.max,status:part.status}:null]))}:null,
       stale:Boolean(row.assessment?.stale),coverage:row.assessment?.coverage??null,components:row.assessment?.components ?? []};
   }
   return {postings:result,config:settings(db),stats:stats(db,result,postings,apps)};
@@ -265,7 +270,7 @@ function mergeSources(before,after) {
   }
   return [...byUrl.values()].sort((a,b)=>a.url.localeCompare(b.url,'en'));
 }
-export function ingestPosting(service,actor,body) {
+export function ingestPosting(service,actor,body,scanRunId=null) {
   service.authorize(actor,true);
   const {key,company,posting:raw,content}=object(body);
   const requestKey=string(key,128);
@@ -318,8 +323,12 @@ export function ingestPosting(service,actor,body) {
       }
     }
     const result={...decision,batch};
-    if (result.decision==='review') db.prepare('INSERT INTO intake_reviews VALUES (?,?,?,?)')
-      .run(randomUUID(),batch,JSON.stringify({company:companyName,posting:normalized,...decision}),iso());
+    if (result.decision==='review') {
+      const id=randomUUID();
+      db.prepare('INSERT INTO intake_reviews(id,batch_id,evidence_json,created_at) VALUES (?,?,?,?)')
+        .run(id,batch,JSON.stringify({company:companyName,posting:normalized,...decision}),iso());
+      if(scanRunId) db.prepare('INSERT INTO intake_scan_links VALUES (?,?)').run(id,scanRunId);
+    }
     db.prepare('UPDATE sync_batches SET status=?,result_json=? WHERE id=?').run(result.decision,JSON.stringify(result),batch);
     service.audit(actor,'intake',batch,null,{decision:result.decision,posting_id:result.id ?? null},batch);
     storeMetric(db,'intake_payload_bytes',Buffer.byteLength(JSON.stringify(body)),'bytes');
@@ -328,6 +337,58 @@ export function ingestPosting(service,actor,body) {
 }
 export function intakeQueue(service,actor) {
   service.authorize(actor,true);
-  return service.db.prepare('SELECT id,batch_id,evidence_json,created_at FROM intake_reviews ORDER BY created_at DESC LIMIT 100').all()
-    .map(row=>({id:row.id,batch:row.batch_id,createdAt:row.created_at,...JSON.parse(row.evidence_json)}));
+  return service.db.prepare(`SELECT r.*,s.origin,d.disposition,d.posting_id AS resolved_posting_id
+    FROM intake_reviews r LEFT JOIN intake_scan_links l ON l.review_id=r.id LEFT JOIN scan_runs s ON s.id=l.scan_run_id
+    LEFT JOIN intake_resolutions d ON d.review_id=r.id ORDER BY d.review_id IS NOT NULL,r.created_at DESC LIMIT 100`).all()
+    .map(row=>({...JSON.parse(row.evidence_json),id:row.id,batch:row.batch_id,createdAt:row.created_at,origin:row.origin??'unverified',
+      version:row.disposition?2:1,disposition:row.disposition,postingId:row.resolved_posting_id}));
+}
+
+export function resolveIntake(service,actor,id,body){
+  service.authorize(actor,true);
+  const {key,version,action,companyId,postingId,postingVersion,reason}=object(body);
+  check(Object.keys(body).every(k=>['key','version','action','companyId','postingId','postingVersion','reason'].includes(k)),'Unknown review field');
+  check(version===1&&['approve','merge','dismiss'].includes(action),'Expected pending review version 1 and a decision');
+  const requestKey=string(key,128),note=string(reason,500),digest=hash({id,...body});
+  const db=service.db;
+  const receipt=row=>({id,disposition:row.disposition,postingId:row.posting_id,version:2});
+  return transaction(db,()=>{
+    const review=db.prepare('SELECT evidence_json FROM intake_reviews WHERE id=?').get(id);
+    check(review,'Review not found',404);
+    const prior=db.prepare('SELECT * FROM intake_resolutions WHERE receipt_key=?').get(requestKey);
+    if(prior){
+      check(prior.digest===digest,'Review key reused with different content',409);
+      return receipt(prior);
+    }
+    check(!db.prepare('SELECT 1 FROM intake_resolutions WHERE review_id=?').get(id),'Review already resolved',409);
+    const input=JSON.parse(review.evidence_json).posting;
+    let target=null;
+    if(action==='approve'){
+      check(postingId===undefined&&postingVersion===undefined,'Approve only an independent posting');
+      const company=service.read(actor,'companies',string(companyId,128));
+      const active=service.read(actor,'job_postings').filter(r=>r.company_id===company.id)
+        .map(r=>({...r,urls:service.relations('job_postings',r.id).sources.map(s=>s.url)}));
+      check(identifyPosting(input,active,input.sources.map(s=>s.url)).decision==='create','Possible duplicate. Review an existing posting.',409);
+      const {review_status:ignored,...fields}=input;
+      target=service.mutate(actor,'job_postings',undefined,undefined,{...fields,company_id:company.id,review_status:'needs_verification'},id).id;
+    } else if(action==='merge'){
+      const row=service.read(actor,'job_postings',string(postingId,128));
+      check(row.version===postingVersion,'Posting changed',409);
+      const company=service.read(actor,'companies',row.company_id);
+      const matches=[company.name,...service.relations('companies',company.id).aliases].map(normalizeText);
+      const evidence=JSON.parse(review.evidence_json);
+      check((evidence.posting.company_id===row.company_id || matches.includes(normalizeText(evidence.company)))&&
+        normalizeText(row.round_key)===normalizeText(input.round_key)&&normalizeText(row.role_code)===normalizeText(input.role_code),
+      'Merge requires the same company, round and role',409);
+      const before=service.relations('job_postings',row.id).sources;
+      const next=mergeSources(before,input.sources).map(s=>Object.fromEntries(Object.entries(s).filter(([,value])=>value!==null)));
+      const existing=mergeSources(before,[]).map(s=>Object.fromEntries(Object.entries(s).filter(([,value])=>value!==null)));
+      if(stable(existing)!==stable(next)) service.mutate(actor,'job_postings',row.id,row.version,{sources:next},id);
+      target=row.id;
+    }
+    const disposition={approve:'approved',merge:'merged',dismiss:'dismissed'}[action];
+    db.prepare('INSERT INTO intake_resolutions VALUES (?,?,?,?,?,?,?)').run(id,requestKey,digest,disposition,target,note,iso());
+    service.audit(actor,'intake_review',id,null,{disposition,postingId:target},id);
+    return receipt({disposition,posting_id:target});
+  });
 }

@@ -33,6 +33,16 @@ export const applicationInactive = application => Boolean(application &&
   (closedIntents.has(application.intent) || closedStages.has(application.stage)));
 export const awaitingResult = application => awaitingStages.has(application.stage) && !applicationInactive(application);
 
+export function postingLifecycle(posting,today,seoulTime){
+  if(['closed','cancelled'].includes(posting.posting_status) || (posting.deadline_date &&
+    (posting.deadline_date<today || posting.deadline_date===today && posting.deadline_time && posting.deadline_time<=seoulTime))) return 'closed';
+  return 'current';
+}
+
+export function seoulTimeOf(now=new Date()){
+  return new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(now);
+}
+
 export function seoulDate(now = new Date()) {
   const parts = new Intl.DateTimeFormat('en',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'})
     .formatToParts(now);

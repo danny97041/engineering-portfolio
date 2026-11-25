@@ -24,7 +24,9 @@ const time = value => {
 };
 const source = value => {
   const s = string(value, 2048);
-  check(URL.canParse(s) && ['https:', 'http:'].includes(new URL(s).protocol), 'Expected source URL');
+  check(URL.canParse(s),'Expected source URL');
+  const url=new URL(s);
+  check(['https:', 'http:'].includes(url.protocol)&&!url.username&&!url.password,'Expected source URL');
   return s;
 };
 const textList = value => {

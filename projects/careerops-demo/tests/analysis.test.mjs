@@ -32,13 +32,28 @@ test('Phase 3 keeps required conditions, preferred conditions, unknown screening
   const check=(mode)=>assessRules({...input,profile,facts:{...facts,qualifications:{...eligible,language:{mode,value:'OPIc IH',evidence}}}});
   assert.equal(check('required').eligibility,'FAIL');
   assert.equal(check('preferred').eligibility,'PASS');
-  assert.equal(assessRules({...input,facts:{...facts,coding:{type:'unknown',evidence}}}).eligibility,'UNKNOWN');
-  assert.equal(assessRules({...input,facts:{...facts,coding:{type:'algorithm',evidence}}}).eligibility,'FAIL');
-  assert.equal(assessRules({...input,seoulTime:'15:00'}).eligibility,'FAIL');
-  assert.equal(assessRules({...input,posting:{...input.posting,deadline_time:null}}).eligibility,'UNKNOWN');
-  assert.equal(assessRules({...input,exclusion:{reason:'Synthetic exclusion'}}).eligibility,'FAIL');
+  const unknownCoding=assessRules({...input,facts:{...facts,coding:{type:'unknown',evidence}}});
+  assert.equal(unknownCoding.eligibility,'PASS');
+  assert.equal(unknownCoding.recommendation,'review');
+  const algorithm=assessRules({...input,facts:{...facts,coding:{type:'algorithm',evidence}}});
+  assert.equal(algorithm.eligibility,'PASS');
+  assert.deepEqual(algorithm.exclusionReasons,['algorithm_test_confirmed']);
+  const closed=assessRules({...input,seoulTime:'15:00'});
+  assert.equal(closed.eligibility,'PASS');
+  assert.deepEqual(closed.exclusionReasons,['posting_closed']);
+  const unknownClose=assessRules({...input,posting:{...input.posting,deadline_time:null}});
+  assert.equal(unknownClose.eligibility,'PASS');
+  assert.equal(unknownClose.recommendation,'review');
+  const excluded=assessRules({...input,exclusion:{reason:'Synthetic exclusion'}});
+  assert.equal(excluded.eligibility,'PASS');
+  assert.deepEqual(excluded.exclusionReasons,['excluded_by_user']);
   assert.equal(assessRules({...input,application:{id:'a',intent:'planned',stage:'not_submitted'}}).userGrade,'A');
-  assert.equal(assessRules({...input,application:{id:'a',intent:'planned',stage:'submitted'}}).eligibility,'FAIL');
+  const handled=assessRules({...input,application:{id:'a',intent:'planned',stage:'submitted'}});
+  assert.equal(handled.eligibility,'PASS');
+  assert.equal(handled.applicationStage,'submitted');
+  assert.deepEqual(handled.exclusionReasons,['round_already_handled']);
+  assert.equal(assessRules({...input,profile,facts:{...facts,qualifications:{...eligible,
+    language:{mode:'required',value:'TOEIC 800',evidence}}}}).eligibility,'UNKNOWN');
 });
 test('Phase 3 complete weight coverage and unknown components have distinct score handling',()=>{
   const components=Object.fromEntries(criteria.map((key,index)=>[key,{score:[100,90,80,70,60,50][index],evidence}]));

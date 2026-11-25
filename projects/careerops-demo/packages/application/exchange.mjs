@@ -132,7 +132,7 @@ export function exportData(service,actor,mode,after=0){
   if(mode==='handover'){
     const w=workspace(service,actor);
     return {schemaVersion:1,today:w.today,metrics:w.metrics,schedules:w.schedules.filter(r=>r.bucket==='active'),
-      applications:applications(service,actor),unreviewed:w.postings.filter(r=>['new','unreviewed','needs_verification'].includes(r.review_status))};
+      applications:applications(service,actor),unreviewed:w.postings.filter(r=>!w.closedPostingIds.includes(r.id)&&['new','unreviewed','needs_verification'].includes(r.review_status))};
   }
   check(mode==='full','Unknown export mode');
   const names=db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all();

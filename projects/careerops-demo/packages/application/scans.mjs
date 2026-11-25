@@ -22,7 +22,7 @@ function processItem(service,actor,run,item,index) {
   const allowed=['round_key','role_code','title','location','posting_number','open_date','deadline_date','deadline_time','posting_status','responsibilities','employment_type','headcount','compensation'];
   check(Object.keys(posting).every(k=>allowed.includes(k)),'Scan field is outside discovery scope');
   const input={key:'scan-'+run+'-'+index,company,posting:{...posting,sources:[{url:source,verified_on:observedAt.slice(0,10),evidence}]}};
-  const apply=()=>ingestPosting(service,actor,input);
+  const apply=()=>ingestPosting(service,actor,input,run);
   const trial=preview(service,apply);
   const db=service.db;
   let outcome, previous=null, after=null, id=trial.decision==='merge'?trial.id:null;
@@ -52,18 +52,19 @@ function processItem(service,actor,run,item,index) {
   }));
   return outcome;
 }
-export function recordScan(service,actor,{key,items}) {
+export function recordScan(service,actor,{key,items,origin='unverified'}) {
   service.authorize(actor,true);
+  check(['unverified','manual','scheduled'].includes(origin),'Unknown scan source');
   const db=service.db, digest=fingerprint(items);
   return transaction(db,()=>{
     const old=db.prepare('SELECT * FROM scan_runs WHERE idempotency_key=?').get(key);
     if (old) {
-      check(old.digest===digest,'Run key reused for another batch',409);
+      check(old.digest===digest && old.origin===origin,'Run key reused for another batch',409);
       if (old.status==='succeeded' || old.attempts>=3) return runReceipt(db,old.id);
     }
     const id=old?.id ?? randomUUID(), now=new Date().toISOString();
     if (old) db.prepare("UPDATE scan_runs SET attempts=attempts+1,status='running',started_at=?,ended_at=NULL,last_error=NULL WHERE id=?").run(now,id);
-    else db.prepare("INSERT INTO scan_runs(id,idempotency_key,digest,started_at,status,request_json) VALUES (?,?,?,?,'running',?)").run(id,key,digest,now,JSON.stringify(items));
+    else db.prepare("INSERT INTO scan_runs(id,idempotency_key,digest,started_at,status,request_json,origin) VALUES (?,?,?,?,'running',?,?)").run(id,key,digest,now,JSON.stringify(items),origin);
     db.exec('SAVEPOINT scan_batch');
     let status='succeeded',error=null;
     try {items.forEach((item,index)=>processItem(service,actor,id,item,index));}
@@ -78,7 +79,7 @@ export function recordScan(service,actor,{key,items}) {
   });
 }
 function runReceipt(db,id) {
-  const run=db.prepare('SELECT id,started_at,ended_at,status,attempts,last_error FROM scan_runs WHERE id=?').get(id);
+  const run=db.prepare('SELECT id,started_at,ended_at,status,attempts,last_error,origin FROM scan_runs WHERE id=?').get(id);
   const counts=db.prepare('SELECT outcome,count(*) AS total FROM scan_results WHERE run_id=? GROUP BY outcome').all(id);
   return {...run,counts:Object.fromEntries(counts.map(r=>[r.outcome,r.total])),durationMs:Date.parse(run.ended_at)-Date.parse(run.started_at),retryable:run.status==='failed' && run.attempts<3};
 }

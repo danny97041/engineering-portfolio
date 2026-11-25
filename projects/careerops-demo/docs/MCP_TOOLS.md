@@ -1,6 +1,6 @@
 # MCP tool reference
 
-The owner workspace exposes 37 tools. The hosted Demo also retains the three earlier synthetic test-record tools. Reader credentials on the local gateway can discover search_jobs and get_job_details. For complete schemas call tools/list. Every write runs through the authorized service and returns a structured result or a tool error. Reuse a request key only for the same operation and arguments.
+The owner workspace exposes 39 tools. The hosted Demo also retains the three earlier synthetic test-record tools. Reader credentials on the local gateway can discover search_jobs and get_job_details. For complete schemas call tools/list. Every write runs through the authorized service and returns a structured result or a tool error. Reuse a request key only for the same operation and arguments.
 
 | Tool | Action | Required inputs | Purpose |
 |---|---|---|---|
@@ -40,6 +40,8 @@ The owner workspace exposes 37 tools. The hosted Demo also retains the three ear
 | add_application | Write | data, key | Save one explicit application decision. Submission requires confirmation. |
 | update_application_status | Write | id, version, data, key | Save one explicit application decision. Submission requires confirmation. |
 | save_assessment | Write | id, data, key | Save an assessment at its observed input versions. |
+| get_fit_profile | Read | id | Read the current revision of the independent fit ratings. |
+| save_fit_profile | Write | id, version, postingVersion, asOf, reason, scores, key | Save five independent fit ratings for an exact posting. |
 | save_interview_feedback | Write | id, feedback, key | Append feedback to one existing interview question. |
 
 ```mermaid

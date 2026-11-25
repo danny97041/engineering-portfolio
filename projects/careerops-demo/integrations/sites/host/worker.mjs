@@ -6,9 +6,11 @@ import { listTools } from '../../../packages/mcp/gateway.mjs';
 import { dispatch } from '../../../packages/mcp/protocol.mjs';
 import { viewResource,viewHtml,withView } from '../../../packages/mcp/view.mjs';
 import qa from '../sandbox/worker.mjs';
-import { assets,baseline,realm,stage } from 'deployment-data';
+import { assets,baseline,realm,stage,migrations } from 'deployment-data';
+import { migrateStore } from '../../../packages/database/migrate.mjs';
+import { allowedScanMethod, allowedScanTool, isScanWrite, scanAccess } from './scan-authorization.mjs';
 
-const json=(data,status=200)=>Response.json(data,{status,headers:{'cache-control':'no-store'}});
+const json=(data,status=200)=>Response.json(data,{status,headers:{'cache-control':'private, no-store','x-content-type-options':'nosniff'}});
 const toBytes=base64=>Uint8Array.from(atob(base64),c=>c.charCodeAt(0));
 const transform=async(bytes,stream)=>new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
 let engine;
@@ -93,7 +95,10 @@ async function handle(request,env,probePrincipal){
   try {
     const url=new URL(request.url),path=url.pathname;
     const identity=request.headers.get('oai-authenticated-user-id');
-    if(request.method!=='GET' && request.headers.has('origin') && request.headers.get('origin')!==url.origin) return json({error:'Invalid origin'},403);
+    const scan=scanAccess(realm,request.headers,env);
+    if(scan?.denied||scan&&path!=='/mcp') return json({error:'Access denied'},403);
+    if(request.method!=='GET' && (request.headers.get('sec-fetch-site')==='cross-site' ||
+      request.headers.has('origin')&&request.headers.get('origin')!==url.origin)) return json({error:'Invalid origin'},403);
     if(path==='/api/verification' && request.method==='POST' && !probePrincipal){
       if(!withinBudget('verification',4)) return json({error:'Try again next minute'},429);
       return await verify(request,env);
@@ -106,22 +111,25 @@ async function handle(request,env,probePrincipal){
     }
     if(path==='/mcp' && request.method!=='POST') return json({error:'Expected POST'},405);
     if(!['GET','POST','PATCH','PUT','DELETE'].includes(request.method)) return json({error:'Method not allowed'},405);
-    if(identity && !probePrincipal && (path.startsWith('/api/')||path==='/mcp') && !withinBudget('user:'+identity,180))
+    if((identity||scan) && !probePrincipal && (path.startsWith('/api/')||path==='/mcp') && !withinBudget((scan?'scan:':'user:')+(scan?.owner??identity),180))
       return json({error:'Try again next minute'},429);
     const body=request.method==='GET'?'':await readBody(request);
     let message;
     if(path==='/mcp'){
+      if(request.headers.get('content-type')?.split(';')[0].trim()!=='application/json') return json({error:'Expected application/json'},415);
       try {message=JSON.parse(body);} catch {return json({error:'Invalid JSON'},400);}
+      if(scan&&!allowedScanMethod(scan,message)) return json({error:'Scan credential scope denied'},403);
       if(message?.method==='tools/list'||message?.method==='initialize'||message?.method==='server/discover'){
         let list=listTools('owner').map(withView);
+        if(scan) list=list.filter(tool=>allowedScanTool(scan,tool.name));
         if(realm==='demo' && message.method==='tools/list'){
           const response=await qa.fetch(new Request(request.url,{method:'POST',headers:{'content-type':'application/json'},body}),env);
           list=list.concat((await response.json()).result.tools);
         }
-        return json(await dispatch(message,{list:()=>list,resource:{info:viewResource,html:viewHtml},name:'careerops-'+realm}));
+        return json(await dispatch(message,{list:()=>list,resource:scan?undefined:{info:viewResource,html:viewHtml},name:'careerops-'+realm}));
       }
     }
-    if(!identity && !probePrincipal) return json({error:'Sign in to this private Site'},401);
+    if(!identity && !probePrincipal&&!scan) return json({error:'Sign in to this private Site'},401);
     if(realm==='demo'&&path==='/mcp'&&['get_test_record','add_test_record','update_test_record'].includes(message?.params?.name))
       return qa.fetch(new Request(request.url,{method:'POST',headers:request.headers,body}),env);
     if(request.method==='GET' && Object.hasOwn(assets,path)){
@@ -130,13 +138,13 @@ async function handle(request,env,probePrincipal){
         'content-security-policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"}});
     }
     if(!path.startsWith('/api/')&&path!=='/mcp') return json({error:'Unknown route'},404);
-    const principal=probePrincipal??('user:'+identity);
+    const principal=probePrincipal??('user:'+(scan?.owner??identity));
     const row=await env.DB.prepare('SELECT revision,snapshot FROM workspace_revisions WHERE principal=? ORDER BY revision DESC LIMIT 1').bind(principal).first();
     const revision=row?.revision??0;
     const compressed=row?new Uint8Array(row.snapshot):toBytes(baseline);
     if(path==='/api/recovery/download' && request.method==='GET'){
       const sqlite=await transform(compressed,new DecompressionStream('gzip'));
-      return new Response(sqlite,{headers:{'content-type':'application/vnd.sqlite3','cache-control':'no-store',
+      return new Response(sqlite,{headers:{'content-type':'application/vnd.sqlite3','cache-control':'private, no-store','x-content-type-options':'nosniff',
         'content-disposition':'attachment; filename="careerops-'+realm+'-r'+revision+'.sqlite"'}});
     }
     if(path==='/api/recovery'){
@@ -163,13 +171,20 @@ async function handle(request,env,probePrincipal){
     try {
       const db=new SqlStore(raw),service=new CareerService(db);
       const events=[];
-      service.logToolCall=event=>events.push(event);
+      service.logToolCall=event=>{
+        if(scan) event[1]=scan.write?'scheduled-writer':'scheduled-reader';
+        events.push(event);
+      };
       if(service.binding.realm!==realm||service.binding.stage!==stage) return json({error:'Binding mismatch'},503);
+      migrateStore(db,migrations);
+      db.dirty=false;
       const reset=realm==='demo'?()=>({reset:true}):undefined;
       const key=realm+'.'+stage+'.'+crypto.randomUUID().replaceAll('-','')+crypto.randomUUID().replaceAll('-','').slice(0,11);
       const headers=new Headers(request.headers);headers.set('authorization','Bearer '+key);
       const handler=createHandler(service,realm,stage,key,undefined,reset);
-      const response=await handler(new Request(url,{method:request.method,headers,body:request.method==='GET'?undefined:body}));
+      const payload=scan&&message?.method==='tools/call'&&isScanWrite(message.params.name)?
+        JSON.stringify({...message,params:{...message.params,arguments:{...message.params.arguments,origin:'scheduled'}}}):body;
+      const response=await handler(new Request(url,{method:request.method,headers,body:request.method==='GET'?undefined:payload}));
       const resetting=path==='/api/sandbox'&&request.method==='POST'&&response.ok;
       const audit=events.map(event=>env.DB.prepare('INSERT INTO workspace_tool_calls VALUES (?,?,?,?,?,?,?,?)').bind(principal,crypto.randomUUID(),...event));
       if(resetting||db.dirty){

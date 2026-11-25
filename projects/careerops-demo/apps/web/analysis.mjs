@@ -1,5 +1,5 @@
-import { button, h, table, valueText } from './dom.mjs';
-import { openPanel } from './forms.mjs';
+import { button, h, select, table, valueText } from './dom.mjs';
+import { labelFor as labelStage, openPanel } from './forms.mjs';
 
 const labels = {
   direct_fit:['직무 직접 적합성','Direct role fit'],skills:['기술 스택','Technical skills'],
@@ -8,7 +8,7 @@ const labels = {
   experience:['필수 경력','Required experience'],degree:['필수 학위','Required degree'],major:['필수 전공','Required major'],
   license:['필수 자격','Required certification'],language:['어학 요건','Language requirement'],coding:['코딩테스트','Coding test'],
   deadline:['접수 마감','Deadline'],round:['회차 중복','Previously handled round'],exclusion:['제외 설정','Exclusions'],
-  PASS:['충족','Pass'],FAIL:['제외','Fail'],UNKNOWN:['검토 필요','Unknown'],
+  PASS:['충족','Pass'],FAIL:['미충족','Fail'],UNKNOWN:['검토 필요','Unknown'],
   candidate:['추천 후보','Candidate'],review:['추가 검토','Review'],excluded:['제외','Excluded'],user_planned:['사용자 지원예정','User-planned'],
   requirement_unverified:['공고 확인 필요','Requirement unverified'],profile_unverified:['보유 조건 확인 필요','Profile unverified'],
   requirement_met:['요구 충족','Requirement met'],requirement_unmet:['필수 조건 미충족','Requirement unmet'],
@@ -20,6 +20,18 @@ const labels = {
   round_available:['신규 검토 가능 회차','Round available'],excluded_by_user:['사용자 제외 범위','User exclusion'],
   no_scoped_exclusion:['해당 제외 설정 없음','No matching exclusion']
 };
+export const fitNames={
+  overall_fit:['종합 직무','Overall role fit'],
+  masters_research_fit:['석사 연구','Master’s research'],
+  ai_project_fit:['AI 프로젝트','AI projects'],
+  career_value_3to5_years:['3~5년 경력','3–5 year career value'],
+  long_term_retention_value:['장기근속','Long-term retention']
+};
+export const fitValue=(score,t)=>score?
+  (score.min===score.max?String(score.min):score.min+'–'+score.max)+' / 100 · '+(score.status==='confirmed'?t('확정','Confirmed'):t('잠정','Provisional')):
+  t('미확인','Unknown');
+const labelInstitution=(key,t)=>({research:t('연구기관','Research institution'),public:t('공공기관','Public institution'),
+  company:t('기업','Company')})[key]??key;
 export function analysisLabel(key,t) { return labels[key] ? t(...labels[key]) : valueText(key); }
 function renderMsg(status,text,error=false) {
   status.textContent=text;
@@ -46,6 +58,46 @@ export function reviewPanel({job,t,api,load,review}) {
   const assessment=review.assessment;
   const detail=h('div',{class:'stack'});
   const refresh=async()=>reviewPanel({job,t,api,load,review:await api('analysis/'+job.id)});
+  const independent=review.fit;
+  const editIndependent=()=>{
+    const label=(ko,en,control)=>h('label',{},t(ko,en),control);
+    const date=h('input',{type:'date',value:independent?.asOf??'',required:true});
+    const reason=h('textarea',{rows:2,maxlength:500,required:true});
+    const status=h('p',{role:'status'});
+    const controls=Object.entries(fitNames).map(([key,names])=>{
+      const stored=independent?.scores[key];
+      const number=value=>h('input',{type:'number',min:0,max:100,step:'any',value:value??''});
+      const min=number(stored?.min),max=number(stored?.max);
+      const confidence=select([['provisional',t('잠정','Provisional')],['confirmed',t('확정','Confirmed')]],stored?.status??'provisional');
+      const source=h('input',{type:'url',maxlength:2048,value:stored?.source??''});
+      const evidence=h('textarea',{rows:2,maxlength:500,value:stored?.evidence??''});
+      return {key,min,max,confidence,source,evidence,body:h('fieldset',{class:'card'},
+        h('legend',{},t(...names)),h('div',{class:'fields'},label('하한 또는 단일 점수','Minimum or single score',min),
+          label('상한','Maximum',max),label('확인 상태','Evidence status',confidence),
+          label('출처 URL','Source URL',source),label('판단 근거','Evidence',evidence)))};
+    });
+    let priorBody, key;
+    const save=h('button',{type:'submit',class:'primary'},t('평가 저장','Save ratings'));
+    openPanel(t('5종 독립 평가','Five independent ratings'),t,h('form',{class:'stack',onsubmit:async event=>{
+      event.preventDefault();
+      save.disabled=true;
+      try{
+        const scores=Object.fromEntries(controls.map(c=>{
+          if(!c.min.value&&!c.max.value&&!c.source.value&&!c.evidence.value) return [c.key,null];
+          if(!c.min.value) throw new Error(t('점수를 입력하거나 해당 항목을 모두 비워 주세요.','Enter a score or clear the rating.'));
+          return [c.key,{min:Number(c.min.value),max:Number(c.max.value||c.min.value),status:c.confidence.value,
+            source:c.source.value,evidence:c.evidence.value}];
+        }));
+        const values={asOf:date.value,reason:reason.value.trim(),scores};
+        const encoded=JSON.stringify(values);
+        if(priorBody!==encoded){key=crypto.randomUUID();priorBody=encoded;}
+        await api('/api/fit/'+job.id,'POST',{...values,key,version:independent?.version??0,postingVersion:review.versions.postingVersion});
+        await load();await refresh();
+      }catch(error){renderMsg(status,error.message,true);}
+      finally{save.disabled=false;}
+    }},label('기준일','Evaluation date',date),label('저장·변경 이유','Reason for this evaluation',reason),
+      h('p',{class:'muted'},t('근거가 없는 항목은 비워 두세요.','Leave unrated dimensions blank.')),controls.map(c=>c.body),save,status));
+  };
   const editFacts=()=>jsonEditor({
     t,title:t('근거 입력','Edit rule evidence'),data:review.facts,
     description:t('공식 공고에서 확인한 구조화 근거 JSON','Structured JSON evidence from the official posting'),
@@ -82,16 +134,28 @@ export function reviewPanel({job,t,api,load,review}) {
     controls.map(item=>item.body),h('button',{class:'primary',type:'submit'},t('평가 저장','Save assessment')),status));
   };
   const dimensions=[t('항목','Criterion'),t('점수','Score'),t('근거','Evidence'),t('불확실성','Uncertainty')];
-  detail.append(h('div',{class:'actions'},h('span',{class:'pill'},analysisLabel(review.eligibility,t)),
-    h('span',{class:'pill'},analysisLabel(review.recommendation,t)),h('span',{class:'pill'},[review.userGrade,review.sizeLabel].filter(Boolean).join(' / ') || t('규모 미확인','Size unknown'))),
+  detail.append(h('div',{class:'actions'},h('span',{class:'pill'},t('자격','Eligibility')+' · '+analysisLabel(review.eligibility,t)),
+    h('span',{class:'pill'},t('추천','Recommendation')+' · '+analysisLabel(review.recommendation,t)),
+    review.applicationStage&&h('span',{class:'pill'},t('전형','Application')+' · '+labelStage(review.applicationStage,t)),
+    review.institution&&h('span',{class:'pill'},t('기관 유형','Institution')+' · '+labelInstitution(review.institution,t)),
+    review.sizeLabel&&h('span',{class:'pill'},t('규모','Size')+' · '+review.sizeLabel)),
+  review.exclusionReasons?.length?h('p',{},t('재추천 제외','Recommendation exclusions')+' · '+review.exclusionReasons.map(reason=>analysisLabel(reason,t)).join(' · ')):null,
   table([t('규칙','Rule'),t('결과','Status'),t('이유','Reason'),t('출처·근거','Source or evidence')],
     review.rules.map(row=>[analysisLabel(row.id,t),analysisLabel(row.status,t),analysisLabel(row.reason,t),
       ['round_available','round_already_handled'].includes(row.reason)?'—':valueText(row.evidence)]),t('자격 판정','Eligibility decisions'),t('자료 없음','No data')),
-  h('div',{class:'actions'},button(t('근거 입력','Edit rule evidence'),editFacts),button(t('적합도 입력','Record fit'),editScore,{class:'primary'})),
+  h('div',{class:'actions'},button(t('근거 입력','Edit rule evidence'),editFacts),button(t('기존 가중합 평가','Record legacy weighted fit'),editScore)),
   h('p',{class:'muted'},t('규칙 버전','Rule version')+' · '+review.ruleVersion));
+  detail.append(h('section',{class:'card stack'},h('h3',{},t('5종 독립 적합도','Five independent ratings')),
+    independent?h('p',{class:'muted'},independent.asOf+' · v'+independent.version+' · '+independent.reason+(independent.stale?' · '+t('이전 평가','Historical'):'')):null,
+    table([t('평가','Rating'),t('점수','Score'),t('출처·근거','Source and evidence')],Object.entries(fitNames).map(([key,names])=>{
+      const part=independent?.scores[key];
+      return [t(...names),fitValue(part,t),part?h('div',{class:'stack'},part.evidence,
+        h('a',{href:part.source,target:'_blank',rel:'noopener noreferrer'},t('출처 열기','Open source'))):'—'];
+    }),t('독립 적합도','Independent ratings'),t('자료 없음','No data')),
+    button(t('5종 평가 저장','Edit the five ratings'),editIndependent,{class:'primary'})));
   if (review.factsStale) detail.prepend(h('p',{class:'error'},t('공고가 수정돼 공식 근거를 다시 확인해야 합니다.','The posting has changed. Reconfirm the official evidence.')));
   if (assessment) {
-    detail.append(h('section',{class:'card stack'},h('h3',{},t('최근 적합도','Latest fit')),
+    detail.append(h('section',{class:'card stack'},h('h3',{},t('기존 6항목 가중합','Legacy six-factor weighted score')),
       h('p',{},(assessment.score==null?t('총점 미산정','No total'):assessment.score+' / 100')+' · '+t('가중치 충족률','Weight coverage')+' '+valueText(assessment.coverage)+'%'),
       assessment.stale ? h('p',{class:'error'},t('입력 기준이 바뀐 이전 평가입니다.','Historical assessment. Inputs have changed.')) : null,
       table(dimensions,assessment.components.map(item=>[analysisLabel(item.criterion,t),valueText(item.score),valueText(item.evidence),valueText(item.uncertainty)]),
@@ -136,12 +200,48 @@ export function analytics(stats,t) {
         stats.observed.map(row=>[row.metric,String(row.samples),num(row.total),num(row.mean),row.unit]),t('계측','Measurements'),t('계측 자료가 없습니다.','No measurements.'))));
 }
 
-export async function showIntake({t,api,load}) {
+export async function showIntake({t,api,load,data}) {
   const queue=await api('intake');
-  openPanel(t('중복 검토 큐','Duplicate review queue'),t,h('div',{class:'stack'},
-    table([t('접수 시각','Received'),t('기업','Company'),t('공고','Posting'),t('유사 후보 수','Similar postings')],
-      queue.map(row=>[row.createdAt,row.company,row.posting.title,String(row.ids.length)]),
-      t('검토 큐','Review queue'),t('검토 항목이 없습니다.','No queued items.')),
+  const origin=key=>({manual:t('수동','Manual'),scheduled:t('예약','Scheduled')})[key]??t('미확인','Unverified');
+  const disposition=key=>({approved:t('신규 승인','Approved'),merged:t('출처 병합','Merged'),dismissed:t('보류 종료','Dismissed')})[key]??t('검토 대기','Pending');
+  function inspect(row){
+    const action=select([['approve',t('신규 승인','Approve as new')],['merge',t('기존 공고에 출처 병합','Merge sources')],['dismiss',t('종료 처리','Dismiss')]],'approve',update);
+    const company=select([['',t('기업 선택','Choose company')],...data.companies.map(c=>[c.id,c.name])],'');
+    const target=select([['',t('공고 선택','Choose posting')],...data.postings
+      .filter(p=>row.ids.includes(p.id)||(p.round_key===row.posting.round_key&&p.role_code===row.posting.role_code))
+      .map(p=>[p.id,p.title+' · '+p.round_key+' · '+(data.companies.find(c=>c.id===p.company_id)?.name??'')])],'');
+    const companyField=h('label',{},t('대상 기업','Company'),company);
+    const targetField=h('label',{hidden:true},t('대상 공고','Target posting'),target);
+    const reason=h('textarea',{required:true,maxlength:500,rows:2});
+    const status=h('p',{role:'status'});
+    const key=crypto.randomUUID();
+    function update(value){companyField.hidden=value!=='approve';targetField.hidden=value!=='merge';}
+    const submit=h('button',{type:'submit',class:'primary'},t('결정 저장','Save decision'));
+    const form=h('form',{class:'stack',onsubmit:async event=>{
+      event.preventDefault();
+      const chosen=data.postings.find(p=>p.id===target.value);
+      const fields=action.value==='merge'?{postingId:chosen?.id,postingVersion:chosen?.version}:
+        action.value==='approve'?{companyId:company.value}:{};
+      submit.disabled=true;
+      try {
+        await api('intake/'+encodeURIComponent(row.id),'POST',{key,version:row.version,action:action.value,reason:reason.value,...fields});
+        await load();
+        const workspace=await api('workspace');
+        await showIntake({t,api,load,data:workspace});
+      } catch(error){renderMsg(status,error.message,true);}
+      finally {submit.disabled=false;}
+    }},h('label',{},t('처리 방식','Decision'),action),companyField,targetField,
+    h('label',{},t('처리 근거','Decision rationale'),reason),submit,status);
+    openPanel(t('공고 근거 검토','Review posting evidence'),t,h('div',{class:'stack'},
+      h('p',{},row.company+' · '+row.posting.title+' · '+row.posting.round_key+' / '+row.posting.role_code),
+      h('p',{},t('출처 분류','Source type')+' · '+origin(row.origin)),
+      h('pre',{},JSON.stringify(row.posting,null,2)),form));
+  }
+  openPanel(t('스캔 검토함','Scan review inbox'),t,h('div',{class:'stack'},
+    table([t('접수 시각','Received'),t('출처','Origin'),t('기업·공고','Company and posting'),t('처리 상태','Status'),t('관리','Manage')],
+      queue.map(row=>[row.createdAt,origin(row.origin),row.company+' · '+row.posting.title,disposition(row.disposition),
+        row.disposition?'—':button(t('근거 확인','Review evidence'),()=>inspect(row))]),
+      t('스캔 검토함','Review inbox'),t('검토 항목이 없습니다.','No queued items.')),
     button(t('공고 수집 등록','Register intake'),()=>jsonEditor({
       t,title:t('공고 수집 등록','Register posting intake'),
       description:t('기업명 또는 별칭, 요청 키, 구조화된 공고를 입력하세요.','Enter a company name or alias, a request key, and a structured posting.'),

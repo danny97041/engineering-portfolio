@@ -3,7 +3,7 @@ export { transaction };
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { createHash } from 'node:crypto';
+import { migrateStore } from './migrate.mjs';
 
 const migrations = new URL('./migrations/', import.meta.url);
 export function openStore(root, realm, stage) {
@@ -21,20 +21,8 @@ export function openStore(root, realm, stage) {
         const binding = db.prepare('SELECT realm,stage FROM instance_binding WHERE singleton=1').get();
         if (binding?.realm !== realm || binding.stage !== stage) throw Error('Storage binding mismatch');
       }
-      db.exec('CREATE TABLE IF NOT EXISTS schema_migrations(name TEXT PRIMARY KEY, sha256 TEXT NOT NULL)');
       const files = readdirSync(migrations).filter(name => /^\d{3}_.+\.sql$/.test(name)).sort();
-      const applied = db.prepare('SELECT * FROM schema_migrations ORDER BY name').all();
-      if (applied.some((row,i)=>row.name !== files[i])) throw Error('Unsupported migration history');
-      for (const [i,name] of files.entries()) {
-        const sql = readFileSync(new URL(name,migrations),'utf8');
-        const digest = createHash('sha256').update(sql.replace(/\r\n/g,'\n')).digest('hex');
-        if (i < applied.length) {
-          if (applied[i].sha256 !== digest) throw Error('Applied migration checksum changed');
-          continue;
-        }
-        db.exec(sql);
-        db.prepare('INSERT INTO schema_migrations VALUES (?,?)').run(name,digest);
-      }
+      migrateStore(db,files.map(name=>[name,readFileSync(new URL(name,migrations),'utf8')]));
       if (!tables.length) {
         db.prepare('INSERT INTO instance_binding VALUES (1,?,?)').run(realm,stage);
         db.exec("INSERT INTO users VALUES ('owner','owner'),('reader','viewer'); INSERT INTO profiles VALUES ('owner','{}',1)");
