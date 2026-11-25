@@ -2,7 +2,8 @@ import {assets} from './embedded.mjs';
 import {compile,sha256} from '../web/model.mjs';
 import {bounded,fileLimit} from '../web/package.mjs';
 import {registryRecord,inspectManifest} from '../web/registry.mjs';
-import {compare,evidenceIndex} from '../web/search.mjs';
+import {compare} from '../web/search.mjs';
+import {createIndexCache} from './index-cache.mjs';
 
 const headers={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer',
   'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'"};
@@ -16,18 +17,22 @@ function asset(path) {
     {headers:{...headers,'Content-Type':entry[0]}});
 }
 let baseline,validation;
+const evidenceIndex=createIndexCache();
 async function catalogState(env){
   baseline??=await asset('/data/catalog.json').json();
   const obj=await env.BUCKET.get('registry/v1.json');
   const state=obj?await obj.json():{runs:[],revision:0};
-  return {state,etag:obj?.etag,catalog:{...baseline,runs:[...baseline.runs,...state.runs]}};
+  return {state,etag:obj?.etag,catalog:{...baseline,revision:state.revision,runs:[...baseline.runs,...state.runs]}};
 }
 const safeJson=async request=>JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(await bounded(request.body,8192)));
 async function research(query,catalog,env){
   const args=query.arguments;
   if(!args || typeof args!=='object' || Array.isArray(args))throw Error('Invalid tool arguments');
   switch(query.tool){
-  case 'search':return {backend:'BM25',results:evidenceIndex(catalog)(args.query,args.k??5)};
+  case 'search':{
+    const idx=evidenceIndex(catalog);
+    return {backend:'BM25',indexVersion:idx.version,stale:idx.stale,results:idx.search(args.query,args.k??5)};
+  }
   case 'compare':if(!Object.hasOwn(catalog.pdes,args.equation))throw Error('Unknown equation');
     return {equation:args.equation,groups:compare(catalog.runs,args.equation)};
   case 'metrics':{const r=catalog.runs.find(r=>r.id===args.id);if(!r)throw Error('Unknown experiment');

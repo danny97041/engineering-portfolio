@@ -1,5 +1,6 @@
 {
   "engine": "157.0.8103.79",
+  "distribution": "local-models",
   "models": 65,
   "points": 2340,
   "outputs": 3420,

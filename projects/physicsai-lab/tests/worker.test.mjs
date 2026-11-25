@@ -33,7 +33,7 @@ if(process.env.LAB_TEST_WORKER)test('owner-only registry, checksum, duplicate, i
   const cat=await (await call('/data/catalog.json')).json();
   assert.equal(cat.runs.length,66);assert.equal(cat.runs.at(-1).sha256,null);
   for(const [tool,args] of [['search',{query:'heat-test'}],['compare',{equation:'heat2d'}],['metrics',{id:'heat-test'}],['predict',{id:'heat2d-baseline-3234',points:[[0.2,0.3,0.4]]}]]){
-    const result=await call('/api/research','POST',JSON.stringify({tool,arguments:args}));assert.equal(result.status,200);
+    const result=await call('/api/research','POST',JSON.stringify({tool,arguments:args}));assert.equal(result.status,tool==='predict' && cat.distribution==='results-only'?422:200);
     if(tool==='search')assert.ok((await result.json()).results.some(h=>h.id==='heat-test'));
   }
   assert.equal((await call('/api/research','POST',JSON.stringify({tool:'delete',arguments:{}}))).status,422);

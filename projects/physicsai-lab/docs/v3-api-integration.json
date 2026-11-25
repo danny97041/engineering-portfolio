@@ -1,0 +1,34 @@
+{
+  "upstream": "374051dc307aa0a66b58e6816c7e97e6dbbfe9b7",
+  "route_status": {
+    "/health": 200,
+    "/models": 200,
+    "/model/info": 200,
+    "/report": 200,
+    "/comparison": 200,
+    "/predict": 200,
+    "/predict/batch": 200,
+    "/rag/search": 200,
+    "/rag/context": 200,
+    "/agent/tool": 200,
+    "/agent/ask": 200,
+    "/registry": 200,
+    "/predict/active": 422,
+    "/registry/activate": 403
+  },
+  "backend": "BM25 only (explicit lightweight fallback)",
+  "hybrid_artifact": {
+    "count": 3593,
+    "dimension": 384,
+    "semantic_weight": 0.6,
+    "keyword_weight": 0.4,
+    "rrf_k": 60
+  },
+  "installed": {
+    "faiss": true,
+    "transformers": false,
+    "torch": false,
+    "uvicorn": true
+  },
+  "real_llm": false
+}

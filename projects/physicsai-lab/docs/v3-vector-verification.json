@@ -1,0 +1,11 @@
+{
+  "matrix_shape": [
+    3593,
+    384
+  ],
+  "queries": 32,
+  "k": 5,
+  "score_max_abs_difference": 1.1920928955078125e-07,
+  "mode": "stored-vector exact IP; tied IDs may differ",
+  "query_encoder_executed": false
+}

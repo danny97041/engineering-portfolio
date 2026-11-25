@@ -1,7 +1,7 @@
 import {compile,loadModel,sha256} from './model.mjs';
 import {exact,axes,descriptions} from './physics.mjs';
 import {heat,lines} from './plots.mjs';
-import {compare,evidenceIndex} from './search.mjs';
+import {compare} from './search.mjs';
 import {fileLimit,unpackPackage} from './package.mjs';
 
 const $=s=>document.querySelector(s);
@@ -19,7 +19,7 @@ const groups={Workspace:[['overview','Overview'],['pdes','PDE Explorer'],['exper
 const navigation=Object.values(groups).flat();
 $('#navigation').innerHTML=Object.entries(groups).map(([name,links])=>'<h2>'+name+'</h2>'+links.map(([id,label])=>'<a href="#'+id+'">'+label+'</a>').join('')).join('');
 const state={eq:'heat2d',run:'heat2d-baseline-3234',component:0,time:0.35,arm:'all',seed:'all',sort:'field_l2'};
-let catalog,validation,search,session,interval,epoch=0;
+let catalog,validation,session,interval,epoch=0;
 const models=new Map();
 const request=async (url,init)=>{const r=await fetch(url,init);if(!r.ok)throw Error((await r.text()).slice(0,200)||'Request failed '+r.status);return r.json();};
 const active=()=>catalog.runs.find(r=>r.id===state.run);
@@ -79,10 +79,16 @@ async function fields(id) {
 function toolsPage(agent) {
   view.innerHTML=(agent?sel('Read-only tool','tool',[['compare','Compare methods'],['metrics','Experiment metrics'],['search','Search evidence']], 'compare'):'')+
     '<label>'+ (agent?'Equation, experiment ID or search query':'Search reports and experiment cards')+'<input id="query" value="heat2d" maxlength="512"></label><p><button id="go">'+(agent?'Run tool':'Search')+'</button></p><div id="results"></div>';
-  $('#go').onclick=()=>{const query=$('#query').value.trim();const tool=agent?$('#tool').value:'search';
-    if(tool==='compare')$('#results').innerHTML=table(['Method','Evaluation','n','Mean field L2','Sample variance'],compare(catalog.runs,query).map(r=>[r.method,r.evaluation,r.n,num(r.mean),num(r.variance)]));
-    else if(tool==='metrics'){const r=catalog.runs.find(r=>r.id===query);$('#results').innerHTML=r?facts([['ID',r.id],['L2',r.field_l2],['Source',r.file],['Evaluation',r.field_points]]):'Unknown experiment ID.';}
-    else {try{const hits=search(query);$('#results').innerHTML=hits.map(h=>'<article><b>'+esc(h.id)+'</b><p>'+esc(h.text.slice(0,600))+'</p><small>'+esc(h.release)+' · '+esc(h.source)+'</small></article>').join('')||'No matching evidence.';}catch(e){$('#results').textContent=e.message;}}
+  let serial=0;
+  $('#go').onclick=async()=>{const seq=++serial,target=$('#results'),query=$('#query').value.trim(),tool=agent?$('#tool').value:'search';
+    target.textContent='Reading research records…';
+    const args=tool==='compare'?{equation:query}:tool==='metrics'?{id:query}:{query};
+    try{const result=await request('./api/research',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tool,arguments:args})});
+      if(seq!==serial||!target.isConnected)return;
+      if(tool==='compare')target.innerHTML=table(['Method','Evaluation','n','Mean field L2','Sample variance'],result.groups.map(r=>[r.method,r.evaluation,r.n,num(r.mean),num(r.variance)]));
+      else if(tool==='metrics')target.innerHTML=facts([['ID',result.id],['L2',result.field_l2],['Source',result.source],['Evaluation',result.evaluation]]);
+      else target.innerHTML='<p class="note">'+esc(result.backend)+' · index '+esc(result.indexVersion)+(result.stale?' · prior index':'')+'</p>'+(result.results.map(h=>'<article><b>'+esc(h.id)+'</b><p>'+esc(h.text.slice(0,600))+'</p><small>'+esc(h.release)+' · '+esc(h.source)+'</small></article>').join('')||'No matching evidence.');
+    }catch(e){if(seq===serial)target.textContent=e.message;}
   };$('#go').click();
 }
 async function importPage(){
@@ -105,7 +111,7 @@ async function importPage(){
     await refresh();$('#out').textContent='Registered '+m.id+'. Model validation pending.';staged=null;
     }catch(e){$('#out').textContent=e.message;$('#approve').disabled=false;}};
 }
-async function refresh(){catalog=await request('./data/catalog.json');search=evidenceIndex(catalog);}
+async function refresh(){catalog=await request('./data/catalog.json');}
 async function render(){
   const id=++epoch;clearInterval(interval);interval=null;
   const page=location.hash.slice(1)||'overview', name=navigation.find(([k])=>k===page)?.[1]??'Overview';

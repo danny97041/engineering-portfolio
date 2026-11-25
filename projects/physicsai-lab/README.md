@@ -25,3 +25,5 @@ The checkpoint publishes the audit code and verification summaries. Upstream wei
 ## Research workspace
 
 [Research results for 65 runs](results/README.md) · [Numerical contract](docs/PHASE_10_CONTRACT.md) · [Browser implementation and reproduction](docs/PHASE_11.md)
+
+[Phase 12 services and validation](docs/PHASE_12.md)
