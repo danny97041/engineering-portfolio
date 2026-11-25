@@ -2,13 +2,22 @@ import { check } from '../domain/contracts.mjs';
 import { records, writeRecord } from '../application/records.mjs';
 import { command } from '../application/commands.mjs';
 import { exportData, importBatch } from '../application/exchange.mjs';
+import { chatPreference, saveChatPreference } from '../application/chat-preference.mjs';
 
 export async function advanced(service,actor,request,url,json,jsonBody){
   const path=url.pathname,method=request.method;
   const match=/^\/api\/records(?:\/([\w-]+))?$/.exec(path);
-  const known=['/api/commands','/api/exchange/preview','/api/exchange/import','/api/exchange/export'];
+  const known=['/api/commands','/api/exchange/preview','/api/exchange/import','/api/exchange/export','/api/personalization/chat'];
   if(!match&&!known.includes(path)) return null;
   service.authorize(actor,true);
+  if(path==='/api/personalization/chat'){
+    check(!url.search,'Unexpected query',400);
+    if(method==='GET') return json(200,chatPreference(service,actor));
+    check(method==='PUT','Method not allowed',405);
+    const tag=request.headers.get('if-match');
+    check(/^"(0|[1-9]\d*)"$/.test(tag??''),'Supply a quoted If-Match version',428);
+    return json(200,saveChatPreference(service,actor,Number(tag.slice(1,-1)),await jsonBody(request)));
+  }
   if(match){
     const id=match[1];
     if(method==='GET'){

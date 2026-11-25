@@ -72,7 +72,20 @@ register('confirm_official_deadline','Confirm one sourced deadline change on an 
 },writing);
 register('get_job_details','Read a single posting by exact ID and its source evidence.',{id},['id'],(s,a,p)=>readJob(s,a,p.id),catalog);
 register('get_dashboard','Return workspace counts and the reporting date.',{},[],(s,a)=>{const w=workspace(s,a);return {today:w.today,metrics:w.metrics};});
-register('get_schedule','Read a page of workspace schedules, with conflicts and status.',page,[],(s,a,p)=>rows(workspace(s,a).schedules,p));
+function schedulePage(items,{offset=0,limit=15}){
+  const page=[];
+  let size=0;
+  for(const row of items.slice(offset,offset+limit)){
+    const bytes=Buffer.byteLength(JSON.stringify(row))+1;
+    if(page.length&&size+bytes>28000) break;
+    page.push(row);size+=bytes;
+  }
+  const next=offset+page.length;
+  return {items:page,nextOffset:next<items.length?next:null};
+}
+register('get_schedule','Read schedules with status and conflicts. Use bucket=active for the active schedule, and nextOffset for more rows.',
+  {...page,bucket:{type:'string',enum:['active','undated','history','excluded']}},[],(s,a,p)=>
+    schedulePage(workspace(s,a).schedules.filter(row=>!p.bucket||row.bucket===p.bucket),p));
 register('get_upcoming_events','Read active dated schedules in chronological order.',page,[],(s,a,p)=>rows(workspace(s,a).schedules.filter(r=>r.bucket==='active'),p));
 register('check_schedule_conflicts','List active schedule conflicts on the stored calendar.',page,[],(s,a,p)=>rows(workspace(s,a).schedules.filter(r=>r.conflict),p));
 register('get_applications','Read a page of application decisions and submission stages.',page,[],(s,a,p)=>rows(applications(s,a),p));
@@ -97,7 +110,7 @@ function changes(s,a,{after=0,limit=15}) {
   return {items,nextAfter:items.at(-1)?.seq??after};
 }
 for (const name of ['get_recent_changes','export_changes']) register(name,'Read change metadata after a sequence number.',{after:page.offset,limit},[],changes);
-register('export_schedule','Export a page of active schedule rows as JSON.',page,[],(s,a,p)=>rows(workspace(s,a).schedules.filter(r=>r.bucket==='active'),p));
+register('export_schedule','Export a page of active schedule rows as JSON. Use nextOffset for more rows.',page,[],(s,a,p)=>schedulePage(workspace(s,a).schedules.filter(r=>r.bucket==='active'),p));
 register('export_handover','Export summary counts and one page of changes.',{after:page.offset,limit},[],(s,a,p)=>({metrics:workspace(s,a).metrics,changes:changes(s,a,p)}));
 register('get_scan_runs','Read scan outcomes, failure queue and per-run evidence.',{...page,id},[],(s,a,p)=>scanHistory(s,p));
 register('check_duplicate','Preview identity resolution for one incoming posting without saving.',{company:text,posting:entity('job_postings')},['company','posting'],(s,a,p)=>preview(s,()=>{
@@ -151,5 +164,9 @@ export function callTool(service,actor,name,args,callId=randomUUID()) {
       return result;
     });
   } catch(error) {status=error.status??500;throw error;}
-  finally {db.prepare('INSERT INTO tool_calls(call_id,actor,tool,status,occurred_at,result_bytes) VALUES (?,?,?,?,?,?)').run(String(callId).slice(0,160),actor,name.slice(0,120),status,new Date().toISOString(),bytes);}
+  finally {
+    const event=[String(callId).slice(0,160),actor,name.slice(0,120),status,new Date().toISOString(),bytes];
+    if(service.logToolCall) service.logToolCall(event);
+    else db.prepare('INSERT INTO tool_calls(call_id,actor,tool,status,occurred_at,result_bytes) VALUES (?,?,?,?,?,?)').run(...event);
+  }
 }

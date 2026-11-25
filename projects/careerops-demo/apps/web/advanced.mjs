@@ -3,6 +3,44 @@ import { openPanel } from './forms.mjs';
 import { csv, markdown, ics } from './exports.mjs';
 
 const json=value=>JSON.stringify(value,null,2);
+export function chatSettingsPanel({api,t,safe,report}){
+  const path='/api/personalization/chat';
+  const status=h('p',{role:'status'});
+  const link=h('a',{href:'https://chatgpt.com/',target:'_blank',rel:'noopener noreferrer'},t('ChatGPT 열기','Open ChatGPT'));
+  const input=h('input',{type:'url',maxlength:400,placeholder:'https://chatgpt.com/c/…'});
+  const save=h('button',{type:'submit',disabled:true},t('대화 링크 저장','Save conversation link'));
+  const clear=button(t('링크 삭제','Remove link'),()=>update(null),{disabled:true});
+  let version;
+  function show(result){
+    version=result.version;
+    input.value=result.conversationUrl??'';
+    link.href=result.conversationUrl??'https://chatgpt.com/';
+    link.textContent=result.conversationUrl?t('연결된 GPT 대화 열기','Open linked GPT conversation'):t('ChatGPT 열기','Open ChatGPT');
+    clear.disabled=!result.conversationUrl;
+    save.disabled=false;
+  }
+  function update(value){
+    safe(async()=>{
+      save.disabled=true;clear.disabled=true;
+      try{
+        show(await api(path,'PUT',{conversationUrl:value},version));
+        report(t('대화 링크를 저장했습니다.','Conversation link saved.'));
+      } catch(error){
+        save.disabled=false;clear.disabled=!input.value;
+        throw error;
+      }
+    });
+  }
+  safe(async()=>{
+    try {show(await api(path));} catch(error){status.textContent=error.message;}
+  });
+  return h('section',{class:'card stack'},h('h2',{},t('GPT 대화 연결','GPT conversation')),
+    h('p',{},t('브라우저 주소창에서 비공개 대화 주소를 복사해 저장하세요. 대화 안에서 CareerOps 앱을 선택하면 권한이 허용된 업무 자료를 조회할 수 있습니다.',
+      'Save the private conversation address from your browser. In ChatGPT, select the CareerOps app to access workspace tools permitted for your account.')),
+    h('form',{class:'stack',onsubmit:event=>{event.preventDefault();update(input.value.trim()||null);}},
+      h('label',{},t('비공개 GPT 대화 주소','Private GPT conversation URL'),input),
+      h('div',{class:'actions'},save,clear,link)),status);
+}
 export function playgroundPanel({api,t,safe,load,data}){
   const output=h('pre',{role:'status'});
   const input=h('textarea',{rows:10,value:'{}','aria-label':t('도구 입력 JSON','Tool arguments JSON')});

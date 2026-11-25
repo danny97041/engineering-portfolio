@@ -47,9 +47,10 @@ export async function gateway(service,actor,request,url,json,jsonBody) {
   let args={};
   if (request.method==='GET') {
     for (const [key,value] of url.searchParams) {
-      check(['limit','offset','after','query'].includes(key) && !Object.hasOwn(args,key),'Invalid query',400);
-      if (key!=='query') check(/^\d+$/.test(value),'Invalid numeric parameter',400);
-      args[key]=key==='query'?value:Number(value);
+      check(['limit','offset','after','query','bucket'].includes(key) && !Object.hasOwn(args,key),'Invalid query',400);
+      const isText=['query','bucket'].includes(key);
+      if (!isText) check(/^\d+$/.test(value),'Invalid numeric parameter',400);
+      args[key]=isText?value:Number(value);
     }
   } else {
     check(!url.search,'Unexpected query',400);

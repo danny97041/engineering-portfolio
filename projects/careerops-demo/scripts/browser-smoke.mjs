@@ -45,6 +45,19 @@ try{
   await button('변경 확정').click();await screen.getByRole('status').getByText(/submitted_at/).waitFor();
   console.log('PASS confirmed submission');
   await nav('일정표');assert.ok(await screen.locator('table').count()>0);
+  await screen.getByRole('table').getByText(/적합도.*\/ 100/).first().waitFor();
+  await nav('개인화');
+  const chat='https://chatgpt.com/c/synthetic-chat-id';
+  const chatInput=screen.getByLabel('비공개 GPT 대화 주소');
+  await chatInput.fill(chat);
+  await button('대화 링크 저장').click();
+  const linked=screen.getByRole('link',{name:'연결된 GPT 대화 열기'});
+  await linked.waitFor();
+  assert.equal(await linked.getAttribute('href'),chat);
+  await nav('일정표');
+  await nav('개인화');await linked.waitFor();
+  await button('링크 삭제').click();
+  await screen.getByRole('link',{name:'ChatGPT 열기',exact:true}).waitFor();
   await nav('면접·문서');await screen.getByText('합성 기술 면접 1',{exact:true}).waitFor();
   await nav('데이터 교환');await button('드라이런').waitFor();
   await nav('MCP 실습');await button('도구 실행').click();
@@ -52,5 +65,11 @@ try{
   page.once('dialog',d=>d.accept());await button('초기 데이터로 복원').click();
   await page.waitForTimeout(350);
   assert.equal(db.prepare("SELECT count(*) n FROM job_postings").get().n,72);assert.deepEqual(errors,[]);
+  await page.route('**/api/v1/analysis',route=>route.fulfill({status:503,json:{error:'Synthetic analysis outage'}}));
+  await page.goto('http://127.0.0.1:'+server.address().port+'/#schedule');
+  await page.reload();
+  await page.locator('input[type=password]').fill(ownerKey);
+  await button('접속').click();
+  await screen.getByRole('table').getByText(/적합도 조회 실패/).first().waitFor();
   console.log('PASS schedule, records, exchange, MCP, sandbox reset');
 } finally {await browser?.close();if(server) await new Promise(done=>server.close(done));db.close();rmSync(root,{recursive:true,force:true});}

@@ -3,7 +3,7 @@ import { applicationFields, companyFields, labelFor, openForm, openPanel, option
 import { csv, ics, markdown } from './exports.mjs';
 import { addDays } from './workflow.mjs';
 import { analysisLabel, analytics, jsonEditor, reviewPanel, showIntake } from './analysis.mjs';
-import { commandsPanel, exchangePanel, recordsPanel, playgroundPanel } from './advanced.mjs';
+import { commandsPanel, exchangePanel, recordsPanel, playgroundPanel, chatSettingsPanel } from './advanced.mjs';
 
 const preferences = {
   get(key,fallback) { try { return JSON.parse(localStorage.getItem('careerops.'+key)) ?? fallback; } catch { return fallback; } },
@@ -13,9 +13,10 @@ const pages = {overview:['개요','Overview'],schedule:['일정표','Schedule'],
   applications:['지원 현황','Applications'],unreviewed:['미분석 공고','Unreviewed Jobs'],
   assessments:['채용 분석','Assessments'],compare:['기업 비교','Compare'],analytics:['통계','Analytics'],
   records:['면접·문서','Interviews & Documents'],commands:['명령 팔레트','Command Palette'],exchange:['데이터 교환','Data Exchange'],
-  activity:['변경 이력','Activity Log'],settings:['설정','Settings'],playground:['MCP 실습','MCP Playground'],engineering:['기술 정보','Engineering']};
+  activity:['변경 이력','Activity Log'],settings:['개인화','Personalization'],playground:['MCP 실습','MCP Playground'],engineering:['기술 정보','Engineering']};
 const state = {
-  language:preferences.get('language','ko'),theme:preferences.get('theme','light'),page:preferences.get('home','overview'),
+  language:preferences.get('language','ko'),theme:preferences.get('theme','light'),
+  page:Object.hasOwn(pages,location.hash.slice(1))?location.hash.slice(1):preferences.get('home','overview'),
   token:'',data:null,analysis:null,query:'',pageNumber:0,selected:new Set(),details:new Map(),jobFilter:preferences.get('jobFilter',{}),
   scheduleFilter:preferences.get('scheduleFilter',{range:'all',kind:'',company:'',conditional:true}),bucket:'active',month:null
 };
@@ -29,6 +30,16 @@ const companyName = id=>company(id)?.name ?? '—';
 const posting = id=>state.data.postings.find(item=>item.id===id);
 const application = id=>state.data.applications.find(item=>item.posting_id===id);
 const analysisFor = id=>state.analysis?.postings[id];
+const fitTitle=()=>t('적합도','Fit score');
+function fitLabel(review){
+  if(!review) return state.fitUnavailable?t('조회 실패','Unavailable'):t('불러오는 중','Loading');
+  const score=review.score!=null?review.score+' / 100':review.coverage!=null?
+    t('총점 미산정','No total')+' · '+review.coverage+'%':t('미평가','Unrated');
+  return review.stale?score+' · '+t('이전 평가','Historical'):score;
+}
+function fitBadge(id){
+  return h('span',{class:'pill','aria-label':fitTitle()+' '+fitLabel(analysisFor(id))},fitTitle()+' '+fitLabel(analysisFor(id)));
+}
 const showDate = row=>[
   row.start_date ?? t('날짜 미정','Date TBD'),row.start_time,
   row.end_date || row.end_time ? '–' : null,row.end_date,row.end_time
@@ -43,22 +54,25 @@ async function api(path,method='GET',body,version) {
   if (version!==undefined) headers['if-match']='"'+version+'"';
   const route=path.startsWith('/')?path:'/api/v1/'+path;
   const response = await fetch(route,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});
-  const data = await response.json();
+  const data=await response.json().catch(()=>null);
   if (!response.ok) {
     if (response.status===401 && state.data) {
       state.token='';
       state.data=null;
       render();
     }
-    throw new Error(data.error ?? t('요청에 실패했습니다.','Request failed.'));
+    throw new Error(data?.error ?? t('요청 실패','Request failed')+' ('+response.status+')');
   }
+  if(data===null) throw new Error(t('사이트에 로그인한 뒤 다시 열어 주세요.','Sign in to the site and reopen.'));
   return data;
 }
 async function load(renderScreen=true) {
-  const [data,analysis,sandbox]=await Promise.all([api('workspace'),api('analysis'),api('/api/sandbox')]);
+  const [data,analysis,sandbox]=await Promise.all([api('workspace'),
+    api('analysis').then(value=>({value}),error=>({error})),api('/api/sandbox').catch(()=>({enabled:false}))]);
   state.data=data;
   state.sandbox=sandbox.enabled;
-  state.analysis=analysis;
+  state.analysis=analysis.value??null;
+  state.fitUnavailable=Boolean(analysis.error);
   state.month ??=state.data.today.slice(0,7);
   state.details.clear();
   for (const id of state.selected) if (!posting(id)) state.selected.delete(id);
@@ -117,6 +131,7 @@ async function jobDetail(row) {
   const org=company(row.company_id);
   const information = [
     [t('기업','Company'),org?.name],[t('별칭','Aliases'),state.data.aliases.filter(item=>item.company_id===row.company_id).map(item=>item.alias).join(', ')],
+    [fitTitle(),fitLabel(analysisFor(row.id))],
     [t('회차와 직무코드','Round and role code'),row.round_key+' / '+row.role_code],
     [t('근무지역','Work location'),row.location],[t('담당 업무','Responsibilities'),row.responsibilities],
     [t('근로 조건','Employment terms'),[row.employment_type,row.compensation].filter(Boolean).join(' · ')],
@@ -219,7 +234,7 @@ function jobList(unreviewedOnly=false) {
     button(t('기업 추가','Add company'),()=>editCompany()),button(t('공고 추가','Add posting'),()=>safe(()=>editJob()),{class:'primary'})),
     h('div',{class:'toolbar'},chosen(t('모든 기업','All companies'),'company',orgs),
       chosen(t('모든 지역','All locations'),'location',unique(state.data.postings.map(row=>row.location))),
-      chosen(t('모든 규모','All sizes'),'size',unique([...state.data.companies.map(row=>row.size_class),...Object.values(state.analysis.postings).map(row=>row.size)])),
+      chosen(t('모든 규모','All sizes'),'size',unique([...state.data.companies.map(row=>row.size_class),...Object.values(state.analysis?.postings??{}).map(row=>row.size)])),
       chosen(t('공고 상태 전체','All posting statuses'),'status',options(['upcoming','open','closed','changed','cancelled','unverified'],t)),
       chosen(t('검토 상태 전체','All review statuses'),'review',options(reviewCodes,t)),
       chosen(t('자격 전체','All eligibility'),'eligibility',['PASS','UNKNOWN','FAIL'].map(key=>[key,analysisLabel(key,t)])),
@@ -227,13 +242,13 @@ function jobList(unreviewedOnly=false) {
       chosen(t('정렬','Sort'),'sort',[['deadline',t('마감일순','Deadline')],['company',t('기업명순','Company')],['updated',t('최근 수정순','Recently updated')],
         ['fit',t('적합도순','Fit score')]],false),
       button(t('필터 저장','Save filters'),()=>{preferences.set('jobFilter',filter);report(t('필터를 저장했습니다.','Filters saved.'));})),
-    table([t('비교','Compare'),t('기업·직무','Company and role'),t('마감','Deadline'),t('지역','Location'),t('공고','Posting'),t('검토','Review'),t('전형','Stage')],
+    table([t('비교','Compare'),t('기업·직무','Company and role'),fitTitle(),t('마감','Deadline'),t('지역','Location'),t('공고','Posting'),t('검토','Review'),t('전형','Stage')],
       visible.map(row=>[h('input',{type:'checkbox',checked:state.selected.has(row.id),'aria-label':jobTitle(row)+' '+t('비교 선택','select for comparison'),
         onchange:event=>{
           if (event.target.checked && state.selected.size>=5) { event.target.checked=false; report(t('최대 5개까지 선택할 수 있습니다.','Select up to five postings.'),true);return; }
           if (event.target.checked) state.selected.add(row.id); else state.selected.delete(row.id);
           $('compare-count').textContent=String(state.selected.size);
-        }}),button(jobTitle(row),()=>showPosting(row.id)),valueText(row.deadline_date),valueText(row.location),
+        }}),button(jobTitle(row),()=>showPosting(row.id)),fitLabel(analysisFor(row.id)),valueText(row.deadline_date),valueText(row.location),
         pill(translated(row.posting_status)),translated(row.review_status),translated(application(row.id)?.stage ?? 'not_submitted')]),titleFor(state.page),empty()),
     h('div',{class:'pager'},h('div',{class:'actions'},button(t('이전','Previous'),()=>{state.pageNumber--;render();},{disabled:state.pageNumber===0}),
       h('span',{},(state.pageNumber+1)+' / '+(last+1)),button(t('다음','Next'),()=>{state.pageNumber++;render();},{disabled:state.pageNumber===last})),
@@ -242,10 +257,10 @@ function jobList(unreviewedOnly=false) {
 }
 function appList() {
   return [heading('applications'),
-    table([t('기업·직무','Company and role'),t('지원 의사','Intent'),t('실제 전형','Actual stage'),t('제출 시각','Submitted at'),t('관리','Manage')],
+    table([t('기업·직무','Company and role'),fitTitle(),t('지원 의사','Intent'),t('실제 전형','Actual stage'),t('제출 시각','Submitted at'),t('관리','Manage')],
       state.data.postings.filter(filterJob).map(row=>{
         const app=application(row.id);
-        return [button(jobTitle(row),()=>showPosting(row.id)),app?.intent==='planned'?t('A 일반','Planned, primary'):translated(app?.intent ?? 'undecided'),
+        return [button(jobTitle(row),()=>showPosting(row.id)),fitLabel(analysisFor(row.id)),app?.intent==='planned'?t('A 일반','Planned, primary'):translated(app?.intent ?? 'undecided'),
           translated(app?.stage ?? 'not_submitted'),valueText(app?.submitted_at),button(t('상태 수정','Edit status'),()=>editApplication(row))];
       }),titleFor('applications'),empty())];
 }
@@ -311,7 +326,7 @@ function schedule() {
       h('div',{class:'toolbar'},button(t('지난 달','Previous month'),()=>{state.month=monthAfter(state.month,-1);render();}),h('strong',{},state.month),
         button(t('다음 달','Next month'),()=>{state.month=monthAfter(state.month,1);render();})),calendar(rows)) : null,
     table(headers.filter((_,i)=>i!==4 || preferences.get('notesColumn',true)),
-      raw.map((values,i)=>[values[0],values[1],button(values[2],()=>editSchedule(rows[i])),pill(values[3]),
+      raw.map((values,i)=>[values[0],h('div',{class:'stack'},values[1],fitBadge(rows[i].posting_id)),button(values[2],()=>editSchedule(rows[i])),pill(values[3]),
         ...(preferences.get('notesColumn',true)?[valueText(values[4])]:[])]),titleFor('schedule'),empty()),
     h('div',{class:'pager'},h('div',{class:'actions'},
       button(t('Markdown 복사','Copy Markdown'),()=>safe(async()=>{await navigator.clipboard.writeText(markdown(headers,exportData));report(t('복사했습니다.','Copied.'));})),
@@ -339,12 +354,12 @@ function compare() {
     [t('우대 요건','Preferred qualifications'),row=>state.details.get(row.id)?.requirements.filter(item=>item.kind==='preferred').map(item=>item.criterion).join(' · ')],
     [t('다음 일정','Next event'),row=>next(row.id)?showDate(next(row.id))+' · '+next(row.id).title:null],
     [t('자격','Eligibility'),row=>analysisLabel(analysisFor(row.id)?.eligibility,t)],
-    [t('적합도 평가','Fit assessment'),row=>analysisFor(row.id)?.stale?t('이전 평가','Historical'):analysisFor(row.id)?.score]
+    [fitTitle(),row=>fitLabel(analysisFor(row.id))]
   ];
   const matrix=entries.map(([label,accessor])=>[label,...jobs.map(row=>valueText(accessor(row)))]);
   const allowed=jobs.map(row=>!analysisFor(row.id)?.excluded);
   const exportColumns=(values)=>values.filter((_,index)=>index===0 || allowed[index-1]);
-  const scoreKeys=Object.keys(state.analysis.config.weights);
+  const scoreKeys=Object.keys(state.analysis?.config.weights??{});
   const bars=table([t('항목','Criterion'),...jobs.map(jobTitle)],scoreKeys.map(key=>[
     analysisLabel(key,t),...jobs.map(row=>{
       const review=analysisFor(row.id);
@@ -361,11 +376,12 @@ function assessments() {
   return [heading('assessments'),table([t('기업·직무','Company and role'),t('자격','Eligibility'),t('추천 상태','Recommendation'),t('규모','Size'),t('적합도','Fit')],
     state.data.postings.filter(filterJob).map(row=>{
       const review=analysisFor(row.id);
-      return [button(jobTitle(row),()=>safe(()=>showAnalysis(row))),pill(analysisLabel(review.eligibility,t)),
-        analysisLabel(review.recommendation,t),analysisLabel(review.sizeLabel,t),review.stale?t('이전 평가','Historical'):valueText(review.score)];
+      return [button(jobTitle(row),()=>safe(()=>showAnalysis(row))),pill(analysisLabel(review?.eligibility,t)),
+        analysisLabel(review?.recommendation,t),analysisLabel(review?.sizeLabel,t),fitLabel(review)];
     }),titleFor('assessments'),empty())];
 }
 function editWeights() {
+  if(!state.analysis){report(t('분석을 다시 불러오려면 새로고침하세요.','Refresh to retry the analysis.'),true);return;}
   const config=state.analysis.config;
   jsonEditor({t,title:t('평가 가중치','Evaluation weights'),description:t('항목별 정수 가중치 · 합계 100','Integer weights · total 100'),
     data:config.weights,save:async weights=>{ await api('analysis_weights','PUT',{version:config.version,weights}); await load(); }});
@@ -431,7 +447,7 @@ function activity() {
       button(t('변경 전후','Before and after'),()=>auditDetail(row))]),titleFor('activity'),empty())];
 }
 function settings() {
-  return [heading('settings'),card(t('처음 열 화면','Default page'),select([['overview',titleFor('overview')],['schedule',titleFor('schedule')]],preferences.get('home','overview'),
+  return [heading('settings'),chatSettingsPanel({api,t,safe,report}),card(t('처음 열 화면','Default page'),select([['overview',titleFor('overview')],['schedule',titleFor('schedule')]],preferences.get('home','overview'),
     value=>{preferences.set('home',value);report(t('저장했습니다.','Saved.'));},{'aria-label':t('기본 화면','Home page')})),
     card(t('일정표 열','Schedule columns'),h('label',{},h('input',{type:'checkbox',checked:preferences.get('notesColumn',true),
       onchange:event=>preferences.set('notesColumn',event.target.checked)}),t('장소·비고 표시','Show location and notes'))),
@@ -451,7 +467,7 @@ const renderers={overview,schedule,jobs:()=>jobList(),unreviewed:()=>jobList(tru
   commands:()=>[heading('commands'),commandsPanel({api,t,safe,load})],
   exchange:()=>[heading('exchange'),exchangePanel({api,t,safe,load})],
   playground:()=>[heading('playground'),playgroundPanel({api,t,safe,load,data:state.data})],
-  assessments,analytics:()=>[heading('analytics'),analytics(state.analysis.stats,t)]};
+  assessments,analytics:()=>[heading('analytics'),state.analysis?analytics(state.analysis.stats,t):h('p',{},t('통계를 다시 불러오려면 새로고침하세요.','Refresh to retry analytics.'))]};
 
 function render() {
   document.documentElement.lang=state.language;

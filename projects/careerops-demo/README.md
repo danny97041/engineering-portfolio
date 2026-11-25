@@ -2,7 +2,7 @@
 
 A browser-based recruitment tracker built around job postings, application records, and interview schedules. The demo uses synthetic data and persists edits in a local SQLite database.
 
-| Capability | Phase 7 |
+| Capability | CareerOps v4 |
 |---|---|
 | Companies, job postings, and schedules | Create, read, edit, and soft-delete |
 | Date-only and multi-day events | Preserve unknown times and both dates |
@@ -78,7 +78,9 @@ HTTP → input and identity checks → application service → SQLite transactio
 node --test
 ```
 
-The 46 automated tests cover eligibility, evidence, intake idempotency, permissions, schema upgrades, calendar export, REST/MCP writes, scan recovery, Work exchange, backup restoration and sandbox isolation. A previous browser smoke test confirmed rule outcomes, partial-score coverage, comparison bars and analytics.
+The 47 automated tests cover eligibility, evidence, permissions, REST/MCP writes, Work exchange, backup restoration, sandbox isolation and private GPT link validation. The browser check covers the agenda when the analysis endpoint returns an error.
+
+[CareerOps v4 release notes](docs/V4_RELEASE.md)
 
 [Gateway contract and synthetic import example](docs/GATEWAY.md)
 

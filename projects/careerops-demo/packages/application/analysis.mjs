@@ -187,7 +187,7 @@ export function analysisIndex(service,actor) {
     if (representative) candidateByCompany.add(posting.company_id);
     result[posting.id]={eligibility:row.eligibility,recommendation:row.recommendation,representative,excluded:row.companyExcluded,
       size:row.size,sizeLabel:row.sizeLabel,userGrade:row.userGrade,score:row.assessment?.score ?? null,
-      stale:Boolean(row.assessment?.stale),components:row.assessment?.components ?? []};
+      stale:Boolean(row.assessment?.stale),coverage:row.assessment?.coverage??null,components:row.assessment?.components ?? []};
   }
   return {postings:result,config:settings(db),stats:stats(db,result,postings,apps)};
 }

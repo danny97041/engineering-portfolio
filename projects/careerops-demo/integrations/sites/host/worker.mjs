@@ -36,10 +36,12 @@ async function readBody(request){
   }
   return new Blob(chunks).text();
 }
-async function persist(db,principal,prior,snapshot){
+async function persist(db,principal,prior,snapshot,audit=[]){
   if(snapshot.length>1800000) throw Object.assign(Error('Workspace snapshot limit exceeded'),{status:413});
   try {
-    await db.prepare('INSERT INTO workspace_revisions VALUES (?,?,?,?,?)').bind(principal,prior+1,prior,new Date().toISOString(),snapshot).run();
+    const revision=db.prepare('INSERT INTO workspace_revisions VALUES (?,?,?,?,?)').bind(principal,prior+1,prior,new Date().toISOString(),snapshot);
+    if(audit.length) await db.batch([revision,...audit]);
+    else await revision.run();
   } catch(error) {
     if(/unique|constraint/i.test(error.message)) throw Object.assign(Error('Workspace changed. Refresh and retry.'),{status:409});
     throw error;
@@ -71,12 +73,21 @@ async function verify(request,env){
     const applied=await rpc('apply_work_batch'),replayed=await rpc('apply_work_batch');
     const imported=await call('/api/v1/applications/'+applied.rows[1].id);
     if(imported.submitted_at!=='2025-01-02'||replayed.rows[1].id!==imported.id) throw Error('Historical import verification failed');
+    const scheduleRead=async(name)=> {
+      const msg=await call('/mcp','POST',{jsonrpc:'2.0',id:'read-'+name,method:'tools/call',params:{name,arguments:{}}});
+      if(msg.result?.isError||!msg.result?.structuredContent) throw Error('Concurrent schedule verification failed');
+    };
+    const beforeReads=(await call('/api/recovery')).revision;
+    await Promise.all(['get_schedule','export_schedule','get_dashboard'].map(scheduleRead));
+    if((await call('/api/recovery')).revision!==beforeReads) throw Error('Read changed workspace revision');
     const state=await call('/api/recovery');
     const recovered=await call('/api/recovery','POST',{expected:state.revision,restore:0});
     const after=await call('/api/v1/companies');
     if(after.some(r=>r.id===created.id)) throw Error('Restore check failed');
-    return json({realm,stage,stored:true,reopened:true,workBatch:true,historicalDate:true,restored:recovered.restored===0,baselinePostings:before.metrics.candidates});
-  } finally {await env.DB.prepare('DELETE FROM workspace_revisions WHERE principal=?').bind(principal).run();}
+    return json({realm,stage,stored:true,reopened:true,workBatch:true,historicalDate:true,agendaConcurrent:true,restored:recovered.restored===0,baselinePostings:before.metrics.candidates});
+  } finally {
+    await env.DB.batch(['workspace_revisions','workspace_tool_calls'].map(table=>env.DB.prepare('DELETE FROM '+table+' WHERE principal=?').bind(principal)));
+  }
 }
 async function handle(request,env,probePrincipal){
   try {
@@ -151,6 +162,8 @@ async function handle(request,env,probePrincipal){
     const raw=await rawStore(compressed);
     try {
       const db=new SqlStore(raw),service=new CareerService(db);
+      const events=[];
+      service.logToolCall=event=>events.push(event);
       if(service.binding.realm!==realm||service.binding.stage!==stage) return json({error:'Binding mismatch'},503);
       const reset=realm==='demo'?()=>({reset:true}):undefined;
       const key=realm+'.'+stage+'.'+crypto.randomUUID().replaceAll('-','')+crypto.randomUUID().replaceAll('-','').slice(0,11);
@@ -158,10 +171,11 @@ async function handle(request,env,probePrincipal){
       const handler=createHandler(service,realm,stage,key,undefined,reset);
       const response=await handler(new Request(url,{method:request.method,headers,body:request.method==='GET'?undefined:body}));
       const resetting=path==='/api/sandbox'&&request.method==='POST'&&response.ok;
+      const audit=events.map(event=>env.DB.prepare('INSERT INTO workspace_tool_calls VALUES (?,?,?,?,?,?,?,?)').bind(principal,crypto.randomUUID(),...event));
       if(resetting||db.dirty){
         const next=resetting?toBytes(baseline):await transform(raw.export(),new CompressionStream('gzip'));
-        await persist(env.DB,principal,revision,next);
-      }
+        await persist(env.DB,principal,revision,next,audit);
+      } else if(audit.length) await env.DB.batch(audit);
       return response;
     } finally {raw.close();}
   } catch(error) {return json({error:probePrincipal?String(error.message).slice(0,160):error.status?error.message:'Workspace operation failed'},error.status??500);}

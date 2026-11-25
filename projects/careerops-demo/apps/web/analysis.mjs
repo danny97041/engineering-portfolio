@@ -92,7 +92,7 @@ export function reviewPanel({job,t,api,load,review}) {
   if (review.factsStale) detail.prepend(h('p',{class:'error'},t('공고가 수정돼 공식 근거를 다시 확인해야 합니다.','The posting has changed. Reconfirm the official evidence.')));
   if (assessment) {
     detail.append(h('section',{class:'card stack'},h('h3',{},t('최근 적합도','Latest fit')),
-      h('p',{},valueText(assessment.score)+' / 100 · '+t('가중치 충족률','Weight coverage')+' '+valueText(assessment.coverage)+'%'),
+      h('p',{},(assessment.score==null?t('총점 미산정','No total'):assessment.score+' / 100')+' · '+t('가중치 충족률','Weight coverage')+' '+valueText(assessment.coverage)+'%'),
       assessment.stale ? h('p',{class:'error'},t('입력 기준이 바뀐 이전 평가입니다.','Historical assessment. Inputs have changed.')) : null,
       table(dimensions,assessment.components.map(item=>[analysisLabel(item.criterion,t),valueText(item.score),valueText(item.evidence),valueText(item.uncertainty)]),
         t('항목별 점수','Criterion scores'),t('평가 없음','No assessments'))));

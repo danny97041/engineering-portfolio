@@ -1,10 +1,27 @@
 export class SqlStore {
-  constructor(raw){this.raw=raw;this.isTransaction=false;this.dirty=false;raw.run('PRAGMA foreign_keys=ON');}
+  constructor(raw){
+    this.raw=raw;this.isTransaction=false;this.dirty=false;
+    this.transactionDirty=false;this.savepoints=new Map();
+    raw.run('PRAGMA foreign_keys=ON');
+  }
   exec(sql){
     this.raw.run(sql);
-    if(/^BEGIN\b/i.test(sql)) this.isTransaction=true;
-    if(/^(COMMIT|ROLLBACK$)/i.test(sql)) this.isTransaction=false;
-    if(/^(INSERT|UPDATE|DELETE|REPLACE)\b/i.test(sql)) this.dirty=true;
+    for(const command of sql.split(';').map(part=>part.trim())){
+      const [operation,...args]=command.toUpperCase().split(/\s+/);
+      if(operation==='BEGIN'){
+        this.isTransaction=true;this.transactionDirty=this.dirty;
+      }
+      if(operation==='SAVEPOINT') this.savepoints.set(args[0],this.dirty);
+      if(operation==='ROLLBACK'){
+        if(args[0]==='TO') this.dirty=this.savepoints.get(args[1])??this.dirty;
+        else this.dirty=this.transactionDirty;
+      }
+      if(operation==='RELEASE') this.savepoints.delete(args[0]);
+      if(operation==='COMMIT'||(operation==='ROLLBACK'&&!args.length)){
+        this.isTransaction=false;this.savepoints.clear();
+      }
+      if(['INSERT','UPDATE','DELETE','REPLACE'].includes(operation)) this.dirty=true;
+    }
   }
   prepare(sql){
     const perform=(args,mode)=>{

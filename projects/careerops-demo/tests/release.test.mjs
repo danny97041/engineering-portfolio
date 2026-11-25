@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { openStore } from '../packages/database/local.mjs';
 import { CareerService } from '../packages/application/service.mjs';
 import { callTool } from '../packages/mcp/gateway.mjs';
+import { createHandler } from '../packages/api/http.mjs';
 
 function fixture(t){
   const root=mkdtempSync(join(tmpdir(),'careerops-release-')),db=openStore(root,'demo','development');
@@ -58,4 +59,24 @@ test('Work migration preserves historical dates, terminal stages, source and unk
   assert.equal(select.get(result.rows[1].id).stage,'rejected');
   assert.equal(select.get(result.rows[1].id).submitted_at,null);
   assert.equal(s.db.prepare("SELECT count(*) n FROM application_events WHERE source='import: Synthetic dated handover'").get().n,3);
+});
+test('Private ChatGPT preferences accept conversation links and enforce authorization and versions',async t=>{
+  const service=fixture(t);
+  const key='demo.development.'+'a'.repeat(43);
+  const viewer='demo.development.'+'b'.repeat(43);
+  const handler=createHandler(service,'demo','development',key,viewer);
+  const req=(url,version,auth=key)=>handler(new Request('http://localhost/api/personalization/chat',{
+    method:url===undefined?'GET':'PUT',headers:{authorization:'Bearer '+auth,'content-type':'application/json','if-match':'"'+version+'"'},
+    body:url===undefined?undefined:JSON.stringify({conversationUrl:url})}));
+  assert.equal((await req(undefined,0,viewer)).status,403);
+  assert.deepEqual(await (await req(undefined,0)).json(),{conversationUrl:null,version:0});
+  for(const url of ['https://chatgpt.com/share/example1234','https://chatgpt.com.example.invalid/c/example1234','https://x:y@chatgpt.com/c/example1234','javascript:alert(1)'])
+    assert.equal((await req(url,0)).status,422);
+  const desired='https://chatgpt.com/g/g-project/c/example1234';
+  const saved=await req(desired+'?tracking=example',0);
+  assert.deepEqual(await saved.json(),{conversationUrl:desired,version:1});
+  assert.equal((await req(null,0)).status,409);
+  assert.deepEqual(await (await req(undefined,0)).json(),{conversationUrl:desired,version:1});
+  assert.deepEqual(await (await req(null,1)).json(),{conversationUrl:null,version:2});
+  assert.equal(service.profile('owner').version,1);
 });
